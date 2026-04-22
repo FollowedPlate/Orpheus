@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Frontend build/cache outputs
+dist/
+.svelte-kit/
+.vite/
+vite.config.ts.timestamp-*.mjs
+*.tsbuildinfo
+
+# Rust/Tauri build outputs
+src-tauri/target/
+
+# Tauri CLI generated icons and bundles
+src-tauri/icons/
+src-tauri/gen/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
