@@ -1,0 +1,445 @@
+import { writable, get } from 'svelte/store';
+import { settingsStore } from './settings';
+import { libraryStore } from './library';
+import { getWordDelay, getRampedWpm } from '../utils/timing';
+import { buildWordGroup } from '../utils/wordGrouping';
+import type { ParsedBook, AppView } from '../types';
+
+export interface ReaderState {
+  // Book data
+  words: string[];
+  paragraphIndices: Set<number>;
+  sentenceIndices: Set<number>;
+  chapterIndices: Set<number>;
+  totalWords: number;
+
+  // Playback position
+  currentIndex: number;
+  currentDisplay: string;  // may be grouped words
+
+  // Playback control
+  isPlaying: boolean;
+  targetWpm: number;
+  currentWpm: number;
+
+  // Ramp-up tracking
+  rampStartTime: number | null;
+  rampStartIndex: number;
+
+  // Session tracking
+  bookId: string;
+  sessionStartTime: number | null;
+  sessionWordsRead: number;
+  playingMs: number;
+
+  // Skip context: true briefly after a skip to trigger full-width adjacent words
+  isSkipContext: boolean;
+
+  // App navigation
+  view: AppView;
+  showSettings: boolean;
+  showStats: boolean;
+
+  // Break/quiz state
+  isOnBreak: boolean;
+  lastBreakMs: number;
+}
+
+const INITIAL_STATE: ReaderState = {
+  words: [],
+  paragraphIndices: new Set(),
+  sentenceIndices: new Set(),
+  chapterIndices: new Set(),
+  totalWords: 0,
+  currentIndex: 0,
+  currentDisplay: '',
+  isPlaying: false,
+  targetWpm: 300,
+  currentWpm: 300,
+  rampStartTime: null,
+  rampStartIndex: 0,
+  bookId: '',
+  sessionStartTime: null,
+  sessionWordsRead: 0,
+  playingMs: 0,
+  isSkipContext: false,
+  view: 'library',
+  showSettings: false,
+  showStats: false,
+  isOnBreak: false,
+  lastBreakMs: 0,
+};
+
+function createReaderStore() {
+  const { subscribe, set, update } = writable<ReaderState>({ ...INITIAL_STATE });
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let skipContextTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let progressSaveInterval: ReturnType<typeof setInterval> | null = null;
+  let playbackStartTime: number | null = null;
+  let accumulatedPlayMs = 0;
+
+  function clearTimers() {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (skipContextTimeoutId) {
+      clearTimeout(skipContextTimeoutId);
+      skipContextTimeoutId = null;
+    }
+  }
+
+  function getState(): ReaderState {
+    return get({ subscribe });
+  }
+
+  function getSettings() {
+    return get(settingsStore);
+  }
+
+  function currentPlayingMs(): number {
+    if (playbackStartTime !== null) {
+      return accumulatedPlayMs + (Date.now() - playbackStartTime);
+    }
+    return accumulatedPlayMs;
+  }
+
+  function scheduleNext() {
+    const state = getState();
+    if (!state.isPlaying) return;
+
+    const settings = getSettings();
+    const paraArray = Array.from(state.paragraphIndices);
+
+    // Get the word group at the current index
+    const group = buildWordGroup(
+      state.words,
+      state.currentIndex,
+      settings.word_grouping_enabled,
+    );
+
+    // Update the display text
+    update((s) => ({ ...s, currentDisplay: group.displayText }));
+
+    // Compute timing for this word (use last word of group for punctuation check)
+    const lastWordInGroup = state.words[group.endIndex] ?? '';
+
+    // Handle ramp-up
+    let currentWpm = state.targetWpm;
+    if (settings.speed_ramp_enabled && state.rampStartTime !== null) {
+      const elapsed = Date.now() - state.rampStartTime;
+      currentWpm = getRampedWpm(
+        state.targetWpm,
+        settings.speed_ramp_start_wpm,
+        settings.speed_ramp_duration_secs * 1000,
+        elapsed,
+      );
+      update((s) => ({ ...s, currentWpm }));
+    }
+
+    const delay = getWordDelay(
+      lastWordInGroup,
+      group.endIndex,
+      paraArray,
+      settings,
+      currentWpm,
+    );
+
+    // Schedule next word
+    const nextIndex = group.endIndex + 1;
+
+    timeoutId = setTimeout(() => {
+      update((s) => {
+        if (!s.isPlaying) return s;
+
+        // Reached end of book
+        if (nextIndex >= s.words.length) {
+          saveProgress(s.currentIndex, true);
+          return { ...s, isPlaying: false, currentIndex: 0 };
+        }
+
+        const newSessionWords = s.sessionWordsRead + (group.endIndex - s.currentIndex + 1);
+
+        // Check for break
+        const playMs = currentPlayingMs();
+        const settings2 = getSettings();
+        if (
+          settings2.break_interval_minutes > 0 &&
+          playMs - s.lastBreakMs >= settings2.break_interval_minutes * 60_000
+        ) {
+          // Trigger break
+          if (progressSaveInterval) clearInterval(progressSaveInterval);
+          if (playbackStartTime !== null) {
+            accumulatedPlayMs += Date.now() - playbackStartTime;
+            playbackStartTime = null;
+          }
+          return {
+            ...s,
+            isPlaying: false,
+            currentIndex: nextIndex,
+            sessionWordsRead: newSessionWords,
+            isOnBreak: true,
+            lastBreakMs: playMs,
+          };
+        }
+
+        return {
+          ...s,
+          currentIndex: nextIndex,
+          sessionWordsRead: newSessionWords,
+        };
+      });
+
+      const newState = getState();
+      if (newState.isPlaying) {
+        scheduleNext();
+      } else if (newState.isOnBreak) {
+        // Break triggered — stop saving interval
+      }
+    }, delay);
+  }
+
+  function saveProgress(currentIndex: number, sessionEnded: boolean) {
+    const state = getState();
+    if (!state.bookId) return;
+
+    const playMs = currentPlayingMs();
+    const minutesPlayed = playMs / 60_000;
+    const avgWpm = minutesPlayed > 0 ? state.sessionWordsRead / minutesPlayed : 0;
+
+    libraryStore.updateProgress(
+      state.bookId,
+      currentIndex,
+      state.sessionWordsRead,
+      Math.round(avgWpm),
+      null,
+      sessionEnded,
+    );
+  }
+
+  return {
+    subscribe,
+
+    loadBook(book: ParsedBook, bookId: string, startIndex = 0) {
+      clearTimers();
+      if (progressSaveInterval) clearInterval(progressSaveInterval);
+      accumulatedPlayMs = 0;
+      playbackStartTime = null;
+
+      const settings = getSettings();
+      const sortedParagraphIndices = [...book.paragraph_indices].sort((a, b) => a - b);
+      const sortedSentenceIndices = [...book.sentence_indices].sort((a, b) => a - b);
+      const sortedChapterIndices = [...book.chapter_indices].sort((a, b) => a - b);
+
+      update(() => ({
+        ...INITIAL_STATE,
+        words: book.words,
+        paragraphIndices: new Set(sortedParagraphIndices),
+        sentenceIndices: new Set(sortedSentenceIndices),
+        chapterIndices: new Set(sortedChapterIndices),
+        totalWords: book.words.length,
+        currentIndex: startIndex,
+        currentDisplay: book.words[startIndex] ?? '',
+        targetWpm: settings.wpm,
+        currentWpm: settings.speed_ramp_enabled ? settings.speed_ramp_start_wpm : settings.wpm,
+        bookId,
+        view: 'reader',
+      }));
+    },
+
+    play() {
+      const state = getState();
+      if (state.isPlaying || state.words.length === 0) return;
+
+      const settings = getSettings();
+
+      update((s) => ({
+        ...s,
+        isPlaying: true,
+        sessionStartTime: s.sessionStartTime ?? Date.now(),
+        rampStartTime: settings.speed_ramp_enabled && s.rampStartTime === null ? Date.now() : s.rampStartTime,
+        isSkipContext: false,
+        isOnBreak: false,
+      }));
+
+      playbackStartTime = Date.now();
+
+      // Auto-save progress every 10 seconds
+      if (progressSaveInterval) clearInterval(progressSaveInterval);
+      progressSaveInterval = setInterval(() => {
+        const s = getState();
+        saveProgress(s.currentIndex, false);
+      }, 10_000);
+
+      scheduleNext();
+    },
+
+    pause() {
+      clearTimers();
+      if (progressSaveInterval) {
+        clearInterval(progressSaveInterval);
+        progressSaveInterval = null;
+      }
+      if (playbackStartTime !== null) {
+        accumulatedPlayMs += Date.now() - playbackStartTime;
+        playbackStartTime = null;
+      }
+      update((s) => ({ ...s, isPlaying: false }));
+      const state = getState();
+      saveProgress(state.currentIndex, false);
+    },
+
+    toggle() {
+      const state = getState();
+      if (state.isPlaying) {
+        this.pause();
+      } else {
+        this.play();
+      }
+    },
+
+    seekTo(index: number) {
+      clearTimers();
+      const state = getState();
+      const clamped = Math.max(0, Math.min(index, state.words.length - 1));
+      update((s) => ({
+        ...s,
+        currentIndex: clamped,
+        currentDisplay: s.words[clamped] ?? '',
+      }));
+      if (state.isPlaying) {
+        scheduleNext();
+      }
+    },
+
+    skipToSentence(direction: 'forward' | 'back') {
+      const wasPlaying = getState().isPlaying;
+      this.pause();
+
+      const state = getState();
+      const settings = getSettings();
+      const sentenceArray = Array.from(state.sentenceIndices);
+
+      let targetIndex: number;
+      if (direction === 'forward') {
+        targetIndex = sentenceArray.find((i) => i > state.currentIndex) ?? state.currentIndex;
+      } else {
+        const prev = sentenceArray.filter((i) => i < state.currentIndex);
+        if (!state.sentenceIndices.has(state.currentIndex) && prev.length > 0) {
+          targetIndex = prev[prev.length - 1];
+        } else {
+          targetIndex = prev[prev.length - 1] ?? 0;
+        }
+      }
+
+      update((s) => ({
+        ...s,
+        currentIndex: targetIndex,
+        currentDisplay: s.words[targetIndex] ?? '',
+        isSkipContext: settings.skip_context_enabled,
+      }));
+
+      if (settings.skip_context_enabled) {
+        if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
+        skipContextTimeoutId = setTimeout(() => {
+          update((s) => ({ ...s, isSkipContext: false }));
+          if (wasPlaying) this.play();
+        }, 1500);
+      } else if (wasPlaying) {
+        this.play();
+      }
+    },
+
+    skipToParagraph(direction: 'forward' | 'back') {
+      const wasPlaying = getState().isPlaying;
+      this.pause();
+
+      const state = getState();
+      const settings = getSettings();
+      const paraArray = Array.from(state.paragraphIndices);
+
+      let targetIndex: number;
+      if (direction === 'forward') {
+        targetIndex = paraArray.find((i) => i > state.currentIndex) ?? state.currentIndex;
+      } else {
+        const prev = paraArray.filter((i) => i < state.currentIndex);
+        targetIndex = prev.length > 0 ? prev[prev.length - 1] : 0;
+      }
+
+      update((s) => ({
+        ...s,
+        currentIndex: targetIndex,
+        currentDisplay: s.words[targetIndex] ?? '',
+        isSkipContext: settings.skip_context_enabled,
+      }));
+
+      if (settings.skip_context_enabled) {
+        if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
+        skipContextTimeoutId = setTimeout(() => {
+          update((s) => ({ ...s, isSkipContext: false }));
+          if (wasPlaying) this.play();
+        }, 1500);
+      } else if (wasPlaying) {
+        this.play();
+      }
+    },
+
+    adjustWpm(delta: number) {
+      const settings = getSettings();
+      update((s) => {
+        const newWpm = Math.max(50, Math.min(1000, s.targetWpm + delta));
+        return { ...s, targetWpm: newWpm, currentWpm: newWpm };
+      });
+      // Persist new WPM to settings
+      settingsStore.patch({ wpm: getState().targetWpm });
+    },
+
+    dismissBreak(quizScore: number | null) {
+      const state = getState();
+      saveProgress(state.currentIndex, false);
+
+      if (quizScore !== null) {
+        libraryStore.updateProgress(
+          state.bookId,
+          state.currentIndex,
+          state.sessionWordsRead,
+          0,
+          quizScore,
+          false,
+        );
+      }
+
+      update((s) => ({ ...s, isOnBreak: false }));
+      this.play();
+    },
+
+    navigateTo(view: AppView) {
+      if (getState().isPlaying) this.pause();
+      update((s) => ({ ...s, view }));
+    },
+
+    setShowSettings(show: boolean) {
+      update((s) => ({ ...s, showSettings: show }));
+    },
+
+    setShowStats(show: boolean) {
+      update((s) => ({ ...s, showStats: show }));
+    },
+
+    getSessionStats() {
+      const state = getState();
+      const playMs = currentPlayingMs();
+      const minutesPlayed = playMs / 60_000;
+      const avgWpm = minutesPlayed > 0 ? Math.round(state.sessionWordsRead / minutesPlayed) : 0;
+      return {
+        wordsRead: state.sessionWordsRead,
+        minutesPlayed: Math.round(minutesPlayed * 10) / 10,
+        avgWpm,
+        progress: state.totalWords > 0 ? state.currentIndex / state.totalWords : 0,
+      };
+    },
+  };
+}
+
+export const readerStore = createReaderStore();
