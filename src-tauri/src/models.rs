@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+fn default_skip_animation_duration_ms() -> u32 {
+    450
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Book {
     pub id: String,
@@ -148,6 +152,10 @@ pub struct Settings {
     pub adjacent_words_enabled: bool,
     pub adjacent_words_count: AdjacentWordsCount,
     pub skip_context_enabled: bool,
+    #[serde(default)]
+    pub skip_animation_enabled: bool,
+    #[serde(default = "default_skip_animation_duration_ms")]
+    pub skip_animation_duration_ms: u32,
     pub focus_mode: bool,
     pub break_interval_minutes: u32,
     pub comprehension_questions_enabled: bool,
@@ -193,6 +201,8 @@ impl Default for Settings {
             adjacent_words_enabled: false,
             adjacent_words_count: AdjacentWordsCount::N3,
             skip_context_enabled: true,
+            skip_animation_enabled: false,
+            skip_animation_duration_ms: 450,
             focus_mode: false,
             break_interval_minutes: 0,
             comprehension_questions_enabled: false,

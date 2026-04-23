@@ -330,6 +330,29 @@
           <span class="field-label">Show surrounding words when skipping (full-width, 1.5 s)</span>
         </label>
 
+        <label class="field checkbox-field">
+          <input type="checkbox" bind:checked={s.skip_animation_enabled} onchange={saveSettings} />
+          <span class="field-label">Animate through words when skipping or scrubbing</span>
+        </label>
+
+        {#if s.skip_animation_enabled}
+          <label class="field">
+            <span class="field-label">Skip/scrub animation duration</span>
+            <div class="number-row">
+              <input
+                type="range"
+                min="100"
+                max="1200"
+                step="25"
+                bind:value={s.skip_animation_duration_ms}
+                onchange={saveSettings}
+              />
+              <span class="num-val">{s.skip_animation_duration_ms} ms</span>
+            </div>
+          </label>
+          <p class="section-subtitle">Controls how long smooth skip/scrub transitions take.</p>
+        {/if}
+
         <div class="divider"></div>
 
         <label class="field">

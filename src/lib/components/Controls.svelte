@@ -9,10 +9,89 @@
   $: wpm = $state.targetWpm;
   $: currentWpm = $state.currentWpm;
 
-  function handleScrub(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const idx = Math.round((parseFloat(input.value) / 100) * ($state.totalWords - 1));
-    readerStore.seekTo(idx, true);
+  let scrubTrackEl: HTMLDivElement | null = null;
+  let isScrubbing = false;
+  let scrubPointerId: number | null = null;
+  let scrubOriginY = 0;
+  let scrubLastX = 0;
+  let scrubDistanceY = 0;
+  let currentDragIndex = 0;
+  let scrubDeltaAccumulator = 0;
+
+  $: displayIndex = isScrubbing ? currentDragIndex : $state.currentIndex;
+  $: displayProgress = $state.totalWords > 0 ? displayIndex / $state.totalWords : 0;
+  $: displayPercentText = `${(displayProgress * 100).toFixed(1)}%`;
+  $: displayWordText =
+    $state.totalWords > 0
+      ? `${Math.min(displayIndex + 1, $state.totalWords)} / ${$state.totalWords}`
+      : '0 / 0';
+  $: scrubMode = scrubDistanceY > 36 ? 'Fine' : 'Coarse';
+
+  function clampIndex(value: number) {
+    return Math.min(Math.max(value, 0), Math.max($state.totalWords - 1, 0));
+  }
+
+  function getTrackIndex(clientX: number) {
+    if (!scrubTrackEl || $state.totalWords <= 0) return 0;
+    const rect = scrubTrackEl.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    const ratio = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+    return Math.round(ratio * Math.max($state.totalWords - 1, 0));
+  }
+
+  function handleScrubPointerDown(e: PointerEvent) {
+    if (!scrubTrackEl) return;
+    const target = e.currentTarget as HTMLElement;
+    isScrubbing = true;
+    scrubPointerId = e.pointerId;
+    scrubOriginY = e.clientY;
+    scrubLastX = e.clientX;
+    scrubDistanceY = 0;
+    scrubDeltaAccumulator = 0;
+    currentDragIndex = getTrackIndex(e.clientX);
+    target.setPointerCapture(e.pointerId);
+    readerStore.seekTo(currentDragIndex, true, false);
+  }
+
+  function handleScrubPointerMove(e: PointerEvent) {
+    if (!isScrubbing || scrubPointerId !== e.pointerId || !scrubTrackEl || $state.totalWords <= 0) return;
+    const rect = scrubTrackEl.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const deltaX = e.clientX - scrubLastX;
+    scrubLastX = e.clientX;
+    scrubDistanceY = Math.abs(e.clientY - scrubOriginY);
+    // Gets fine faster as pointer moves away from the bar.
+    const sensitivity = 1 / Math.pow(1 + scrubDistanceY / 8, 2);
+    const rawIndexDelta = (deltaX * sensitivity * Math.max($state.totalWords - 1, 0)) / rect.width;
+    scrubDeltaAccumulator += rawIndexDelta;
+
+    let indexDelta = 0;
+    if (scrubDistanceY >= 36) {
+      // Finest mode: only advance one word per update step.
+      if (Math.abs(scrubDeltaAccumulator) >= 1) {
+        indexDelta = Math.sign(scrubDeltaAccumulator);
+        scrubDeltaAccumulator -= indexDelta;
+      }
+    } else {
+      indexDelta = Math.trunc(scrubDeltaAccumulator);
+      if (indexDelta !== 0) {
+        scrubDeltaAccumulator -= indexDelta;
+      }
+    }
+
+    if (indexDelta !== 0) {
+      currentDragIndex = clampIndex(currentDragIndex + indexDelta);
+      readerStore.seekTo(currentDragIndex, true, false);
+    }
+  }
+
+  function handleScrubPointerEnd(e: PointerEvent) {
+    if (!isScrubbing || scrubPointerId !== e.pointerId) return;
+    const target = e.currentTarget as HTMLElement;
+    isScrubbing = false;
+    scrubPointerId = null;
+    target.releasePointerCapture(e.pointerId);
+    readerStore.seekTo(currentDragIndex, true, true);
   }
 
   function handleWpmInput(e: Event) {
@@ -27,17 +106,30 @@
 <div class="controls" class:focus-hidden={$state.showSettings}>
   <!-- Progress bar -->
   <div class="progress-area">
-    <input
-      type="range"
-      class="scrub"
-      min="0"
-      max="100"
-      step="0.01"
-      value={progress * 100}
-      oninput={handleScrub}
+    <div
+      class="scrub-track"
+      bind:this={scrubTrackEl}
+      role="slider"
+      tabindex="0"
       aria-label="Reading progress"
-    />
-    <span class="progress-label">{Math.round(progress * 100)}%</span>
+      aria-valuemin="0"
+      aria-valuemax={$state.totalWords}
+      aria-valuenow={displayIndex}
+      onpointerdown={handleScrubPointerDown}
+      onpointermove={handleScrubPointerMove}
+      onpointerup={handleScrubPointerEnd}
+      onpointercancel={handleScrubPointerEnd}
+    >
+      <div class="scrub-fill" style={`width: ${displayProgress * 100}%`}></div>
+      <div class="scrub-thumb" style={`left: ${displayProgress * 100}%`}></div>
+      {#if isScrubbing}
+        <div class="scrub-tooltip">
+          {displayPercentText} • {displayWordText}
+          <span class="scrub-mode">{scrubMode}</span>
+        </div>
+      {/if}
+    </div>
+    <span class="progress-label">{Math.round(displayProgress * 100)}%</span>
   </div>
 
   <!-- Control buttons row -->
@@ -163,11 +255,63 @@
     width: 100%;
   }
 
-  .scrub {
+  .scrub-track {
     flex: 1;
-    height: 4px;
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border) 75%, transparent);
     cursor: pointer;
-    accent-color: var(--accent);
+    touch-action: none;
+  }
+
+  .scrub-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0%;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+
+  .scrub-thumb {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+  }
+
+  .scrub-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface) 88%, black 12%);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-family: var(--font-family);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .scrub-mode {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
   }
 
   .progress-label {

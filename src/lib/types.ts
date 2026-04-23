@@ -41,6 +41,8 @@ export interface Settings {
   adjacent_words_enabled: boolean;
   adjacent_words_count: AdjacentWordsCount;
   skip_context_enabled: boolean;
+  skip_animation_enabled: boolean;
+  skip_animation_duration_ms: number;
   focus_mode: boolean;
   break_interval_minutes: number;
   comprehension_questions_enabled: boolean;
@@ -160,6 +162,8 @@ export const DEFAULT_SETTINGS: Settings = {
   adjacent_words_enabled: false,
   adjacent_words_count: 3,
   skip_context_enabled: true,
+  skip_animation_enabled: false,
+  skip_animation_duration_ms: 450,
   focus_mode: false,
   break_interval_minutes: 0,
   comprehension_questions_enabled: false,

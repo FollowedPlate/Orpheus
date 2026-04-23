@@ -80,11 +80,22 @@ function createReaderStore() {
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let skipContextTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let animationFrameId: number | null = null;
+  let animationToken = 0;
   let progressSaveInterval: ReturnType<typeof setInterval> | null = null;
   let playbackStartTime: number | null = null;
   let accumulatedPlayMs = 0;
 
+  function cancelAnimation() {
+    animationToken += 1;
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+  }
+
   function clearTimers() {
+    cancelAnimation();
     if (timeoutId) {
       clearTimeout(timeoutId);
       timeoutId = null;
@@ -223,6 +234,53 @@ function createReaderStore() {
     );
   }
 
+  function animateToIndex(
+    targetIndex: number,
+    showSkipContext: boolean,
+    onDone?: () => void,
+  ) {
+    const state = getState();
+    const startIndex = state.currentIndex;
+    const distance = targetIndex - startIndex;
+    if (distance === 0) {
+      onDone?.();
+      return;
+    }
+
+    cancelAnimation();
+    const token = animationToken;
+    const settings = getSettings();
+    const startTs = performance.now();
+    const durationMs = Math.max(100, Math.min(1200, settings.skip_animation_duration_ms));
+
+    const step = (now: number) => {
+      if (token !== animationToken) return;
+
+      const t = Math.min(1, (now - startTs) / durationMs);
+      const eased = t < 0.5
+        ? 4 * t ** 3
+        : 1 - ((-2 * t + 2) ** 3) / 2;
+      const nextIndex = Math.round(startIndex + distance * eased);
+      const clamped = Math.max(0, Math.min(nextIndex, Math.max(state.words.length - 1, 0)));
+
+      update((s) => ({
+        ...s,
+        currentIndex: clamped,
+        currentDisplay: s.words[clamped] ?? '',
+        isSkipContext: showSkipContext && settings.skip_context_enabled,
+      }));
+
+      if (t < 1) {
+        animationFrameId = requestAnimationFrame(step);
+      } else {
+        animationFrameId = null;
+        onDone?.();
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(step);
+  }
+
   return {
     subscribe,
 
@@ -255,6 +313,7 @@ function createReaderStore() {
     },
 
     play() {
+      cancelAnimation();
       const state = getState();
       if (state.isPlaying || state.words.length === 0) return;
 
@@ -287,6 +346,7 @@ function createReaderStore() {
     },
 
     pause() {
+      cancelAnimation();
       clearTimers();
       if (progressSaveInterval) {
         clearInterval(progressSaveInterval);
@@ -310,31 +370,44 @@ function createReaderStore() {
       }
     },
 
-    seekTo(index: number, showSkipContext = false) {
+    seekTo(index: number, showSkipContext = false, animate = true) {
       clearTimers();
       const state = getState();
       const settings = getSettings();
       const clamped = Math.max(0, Math.min(index, state.words.length - 1));
-      update((s) => ({
-        ...s,
-        currentIndex: clamped,
-        currentDisplay: s.words[clamped] ?? '',
-        isSkipContext: showSkipContext && settings.skip_context_enabled,
-      }));
+      const shouldAnimate =
+        animate &&
+        settings.skip_animation_enabled &&
+        !state.isPlaying &&
+        Math.abs(clamped - state.currentIndex) > 1;
 
-      if (showSkipContext && settings.skip_context_enabled) {
+      const finishSkipContext = () => {
+        if (!showSkipContext || !settings.skip_context_enabled) return;
         if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
         skipContextTimeoutId = setTimeout(() => {
           update((s) => ({ ...s, isSkipContext: false }));
         }, 1500);
+      };
+
+      if (shouldAnimate) {
+        animateToIndex(clamped, showSkipContext, finishSkipContext);
+      } else {
+        update((s) => ({
+          ...s,
+          currentIndex: clamped,
+          currentDisplay: s.words[clamped] ?? '',
+          isSkipContext: showSkipContext && settings.skip_context_enabled,
+        }));
+        finishSkipContext();
       }
 
-      if (state.isPlaying) {
+      if (state.isPlaying && !shouldAnimate) {
         scheduleNext();
       }
     },
 
     skipToSentence(direction: 'forward' | 'back') {
+      cancelAnimation();
       const wasPlaying = getState().isPlaying;
       this.pause();
 
@@ -354,25 +427,33 @@ function createReaderStore() {
         }
       }
 
-      update((s) => ({
-        ...s,
-        currentIndex: targetIndex,
-        currentDisplay: s.words[targetIndex] ?? '',
-        isSkipContext: settings.skip_context_enabled,
-      }));
+      const finish = () => {
+        if (settings.skip_context_enabled) {
+          if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
+          skipContextTimeoutId = setTimeout(() => {
+            update((s) => ({ ...s, isSkipContext: false }));
+            if (wasPlaying) this.play();
+          }, 1500);
+        } else if (wasPlaying) {
+          this.play();
+        }
+      };
 
-      if (settings.skip_context_enabled) {
-        if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
-        skipContextTimeoutId = setTimeout(() => {
-          update((s) => ({ ...s, isSkipContext: false }));
-          if (wasPlaying) this.play();
-        }, 1500);
-      } else if (wasPlaying) {
-        this.play();
+      if (settings.skip_animation_enabled && Math.abs(targetIndex - state.currentIndex) > 1) {
+        animateToIndex(targetIndex, settings.skip_context_enabled, finish);
+      } else {
+        update((s) => ({
+          ...s,
+          currentIndex: targetIndex,
+          currentDisplay: s.words[targetIndex] ?? '',
+          isSkipContext: settings.skip_context_enabled,
+        }));
+        finish();
       }
     },
 
     skipToParagraph(direction: 'forward' | 'back') {
+      cancelAnimation();
       const wasPlaying = getState().isPlaying;
       this.pause();
 
@@ -388,21 +469,28 @@ function createReaderStore() {
         targetIndex = prev.length > 0 ? prev[prev.length - 1] : 0;
       }
 
-      update((s) => ({
-        ...s,
-        currentIndex: targetIndex,
-        currentDisplay: s.words[targetIndex] ?? '',
-        isSkipContext: settings.skip_context_enabled,
-      }));
+      const finish = () => {
+        if (settings.skip_context_enabled) {
+          if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
+          skipContextTimeoutId = setTimeout(() => {
+            update((s) => ({ ...s, isSkipContext: false }));
+            if (wasPlaying) this.play();
+          }, 1500);
+        } else if (wasPlaying) {
+          this.play();
+        }
+      };
 
-      if (settings.skip_context_enabled) {
-        if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
-        skipContextTimeoutId = setTimeout(() => {
-          update((s) => ({ ...s, isSkipContext: false }));
-          if (wasPlaying) this.play();
-        }, 1500);
-      } else if (wasPlaying) {
-        this.play();
+      if (settings.skip_animation_enabled && Math.abs(targetIndex - state.currentIndex) > 1) {
+        animateToIndex(targetIndex, settings.skip_context_enabled, finish);
+      } else {
+        update((s) => ({
+          ...s,
+          currentIndex: targetIndex,
+          currentDisplay: s.words[targetIndex] ?? '',
+          isSkipContext: settings.skip_context_enabled,
+        }));
+        finish();
       }
     },
 
