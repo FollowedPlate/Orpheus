@@ -42,6 +42,12 @@ function createLibraryStore() {
       }
     },
 
+    async relocateBook(bookId: string, newPath: string) {
+      await invoke('update_book_file_path', { bookId, newPath });
+      const fresh = await invoke<Library>('load_library');
+      set(fresh);
+    },
+
     async updateBookMetadata(bookId: string, metadata: BookMetadata) {
       try {
         await invoke('update_book_metadata', { bookId, metadata });

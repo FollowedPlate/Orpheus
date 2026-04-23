@@ -17,6 +17,7 @@ pub fn run() {
             library::remove_book,
             library::start_session,
             library::update_book_metadata,
+            library::update_book_file_path,
             settings::load_settings,
             settings::save_settings,
             llm::generate_questions,

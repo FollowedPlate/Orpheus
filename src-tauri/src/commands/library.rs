@@ -1,3 +1,4 @@
+use super::files;
 use crate::models::{BookMetadata, Library, LibraryEntry, ProgressUpdate, ReadingSession};
 use chrono::Utc;
 use std::path::PathBuf;
@@ -120,6 +121,55 @@ pub async fn update_book_metadata(
     if let Some(entry) = library.entries.iter_mut().find(|e| e.book.id == book_id) {
         entry.book.metadata = Some(metadata);
     }
+
+    save_library(app, library).await
+}
+
+/// Point an existing library entry at a new file on disk (after move/rename). Re-parses the file
+/// and updates title, author, word count, and format. Progress index is clamped to the new length.
+#[tauri::command]
+pub async fn update_book_file_path(
+    app: tauri::AppHandle,
+    book_id: String,
+    new_path: String,
+) -> Result<(), String> {
+    let parsed = files::parse_book_sync(&new_path)?;
+
+    let mut library = load_library(app.clone()).await?;
+
+    let entry = library
+        .entries
+        .iter_mut()
+        .find(|e| e.book.id == book_id)
+        .ok_or_else(|| "Book not found in library".to_string())?;
+
+    let path_buf = PathBuf::from(&new_path);
+    let file_format = path_buf
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("txt")
+        .to_lowercase();
+
+    let word_count = parsed.words.len();
+
+    entry.book.file_path = new_path;
+    entry.book.file_format = file_format;
+    entry.book.title = parsed.title;
+    entry.book.author = parsed.author;
+    entry.book.word_count = word_count;
+    // Avoid stale metadata when the on-disk work may have changed.
+    entry.book.metadata = None;
+
+    entry.current_word_index = if word_count == 0 {
+        0
+    } else {
+        entry.current_word_index.min(word_count - 1)
+    };
+    entry.progress = if word_count > 0 {
+        entry.current_word_index as f64 / word_count as f64
+    } else {
+        0.0
+    };
 
     save_library(app, library).await
 }

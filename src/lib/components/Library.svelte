@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
+  import MissingBookFileCallout from './MissingBookFileCallout.svelte';
+  import { isMissingBookFileError } from '../missingBookFile';
   import { readerStore } from '../stores/reader';
   import { libraryStore } from '../stores/library';
   import { settingsStore } from '../stores/settings';
@@ -8,6 +10,7 @@
 
   let opening = false;
   let openError: string | null = null;
+  let missingFileEntry: LibraryEntry | null = null;
   let confirmRemove: string | null = null;
 
   $: entries = $libraryStore.entries.slice().sort((a, b) => {
@@ -47,6 +50,7 @@
   async function openFile() {
     opening = true;
     openError = null;
+    missingFileEntry = null;
     try {
       const selected = await open({
         multiple: false,
@@ -91,7 +95,12 @@
       readerStore.loadBook(parsed, id, 0);
       void generateMetadataInBackground(entry, parsed);
     } catch (e) {
-      openError = String(e);
+      if (isMissingBookFileError(e)) {
+        openError =
+          'That file is no longer at this location. It may have been moved or deleted. Choose another file or restore it to this path and try again.';
+      } else {
+        openError = String(e);
+      }
     } finally {
       opening = false;
     }
@@ -100,6 +109,7 @@
   async function openBook(entry: LibraryEntry) {
     opening = true;
     openError = null;
+    missingFileEntry = null;
     try {
       const parsed = await invoke<ParsedBook>('parse_book', {
         path: entry.book.file_path,
@@ -111,7 +121,11 @@
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
-      openError = String(e);
+      if (isMissingBookFileError(e)) {
+        missingFileEntry = entry;
+      } else {
+        openError = String(e);
+      }
     } finally {
       opening = false;
     }
@@ -120,6 +134,7 @@
   async function removeBook(id: string) {
     await libraryStore.removeBook(id);
     confirmRemove = null;
+    if (missingFileEntry?.book.id === id) missingFileEntry = null;
   }
 
   function openBookDetail(id: string) {
@@ -161,9 +176,18 @@
     </div>
   </header>
 
-  {#if openError}
+  {#if missingFileEntry}
+    <MissingBookFileCallout
+      entry={missingFileEntry}
+      onDismiss={() => (missingFileEntry = null)}
+      onAfterRelocate={async (bookId) => {
+        const next = $libraryStore.entries.find((e) => e.book.id === bookId);
+        if (next) await openBook(next);
+      }}
+    />
+  {:else if openError}
     <div class="error-banner">
-      <span>Error: {openError}</span>
+      <span>{openError}</span>
       <button onclick={() => (openError = null)}>×</button>
     </div>
   {/if}

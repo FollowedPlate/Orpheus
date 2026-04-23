@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import MissingBookFileCallout from './MissingBookFileCallout.svelte';
+  import { isMissingBookFileError } from '../missingBookFile';
   import { libraryStore } from '../stores/library';
   import { readerStore } from '../stores/reader';
   import { settingsStore } from '../stores/settings';
@@ -8,6 +11,7 @@
   $: entry = $libraryStore.entries.find((e) => e.book.id === $readerStore.selectedBookId) ?? null;
   let loading = false;
   let opening = false;
+  let missingFileBanner = false;
 
   function canGenerateMetadata(): boolean {
     if (!entry) return false;
@@ -40,6 +44,7 @@
   async function startReading() {
     if (!entry) return;
     opening = true;
+    missingFileBanner = false;
     try {
       const parsed = await invoke<ParsedBook>('parse_book', { path: entry.book.file_path });
       await invoke('start_session', { bookId: entry.book.id });
@@ -48,7 +53,11 @@
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
-      console.error('Failed to open book:', e);
+      if (isMissingBookFileError(e)) {
+        missingFileBanner = true;
+      } else {
+        console.error('Failed to open book:', e);
+      }
     } finally {
       opening = false;
     }
@@ -57,9 +66,16 @@
   async function generateMetadataNow() {
     if (!entry || loading) return;
     loading = true;
+    missingFileBanner = false;
     try {
       const parsed = await invoke<ParsedBook>('parse_book', { path: entry.book.file_path });
       await generateMetadataInBackground(entry, parsed);
+    } catch (e) {
+      if (isMissingBookFileError(e)) {
+        missingFileBanner = true;
+      } else {
+        console.error('Failed to generate metadata:', e);
+      }
     } finally {
       loading = false;
     }
@@ -79,6 +95,20 @@
         {opening ? 'Opening…' : entry.progress > 0 ? 'Continue Reading' : 'Start Reading'}
       </button>
     </header>
+
+    {#if missingFileBanner}
+      <div class="callout-wrap">
+        <MissingBookFileCallout
+          entry={entry}
+          onDismiss={() => (missingFileBanner = false)}
+          onAfterRelocate={async () => {
+            await tick();
+            await startReading();
+          }}
+          onRemovedFromLibrary={() => readerStore.navigateTo('library')}
+        />
+      </div>
+    {/if}
 
     <section class="book-overview">
       <h1>{entry.book.title}</h1>
@@ -156,6 +186,10 @@
     display: flex;
     justify-content: space-between;
     margin-bottom: 28px;
+  }
+
+  .callout-wrap :global(.callout) {
+    margin: 0 0 24px;
   }
 
   .book-overview h1 {

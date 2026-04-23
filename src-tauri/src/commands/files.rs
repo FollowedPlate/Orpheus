@@ -2,9 +2,15 @@ use crate::models::ParsedBook;
 use crate::parsers;
 use std::path::Path;
 
-#[tauri::command]
-pub async fn parse_book(path: String) -> Result<ParsedBook, String> {
-    let file_path = Path::new(&path);
+/// Returned when the path is missing or not a regular file (used by the UI for friendly handling).
+pub const LIBRARY_FILE_NOT_FOUND: &str = "LIBRARY_FILE_NOT_FOUND";
+
+pub fn parse_book_sync(path: &str) -> Result<ParsedBook, String> {
+    let file_path = Path::new(path);
+
+    if !file_path.is_file() {
+        return Err(LIBRARY_FILE_NOT_FOUND.to_string());
+    }
 
     let extension = file_path
         .extension()
@@ -19,4 +25,9 @@ pub async fn parse_book(path: String) -> Result<ParsedBook, String> {
         "azw3" | "mobi" => parsers::azw3::parse(file_path),
         other => Err(format!("Unsupported file format: .{other}")),
     }
+}
+
+#[tauri::command]
+pub async fn parse_book(path: String) -> Result<ParsedBook, String> {
+    parse_book_sync(&path)
 }
