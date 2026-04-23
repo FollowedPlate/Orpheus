@@ -1,6 +1,7 @@
 <script lang="ts">
   import { readerStore } from '../stores/reader';
   import { settingsStore } from '../stores/settings';
+  import { libraryStore } from '../stores/library';
   import { invoke } from '@tauri-apps/api/core';
   import type { LlmQuestion, AnswerEvaluation } from '../types';
 
@@ -33,14 +34,24 @@
     error = null;
     try {
       const rs = $readerStore;
-      const start = Math.max(0, rs.currentIndex - 300);
+      const maxWords = Math.min(
+        2000,
+        Math.max(50, $settingsStore.quiz_context_max_words),
+      );
+      const sinceBreakStart = rs.lastBreakWordIndex;
+      const maxStart = rs.currentIndex - maxWords;
+      const start = Math.max(0, sinceBreakStart, maxStart);
       const contextWords = rs.words.slice(start, rs.currentIndex);
       const contextText = contextWords.join(' ');
+      const currentBook = $libraryStore.entries.find((e) => e.book.id === rs.bookId)?.book ?? null;
 
       questions = await invoke<LlmQuestion[]>('generate_questions', {
         settings: $settingsStore,
         contextText,
         questionCount: 3,
+        bookTitle: currentBook?.title ?? null,
+        bookAuthor: currentBook?.author ?? null,
+        bookMetadata: currentBook?.metadata ?? null,
       });
 
       currentQuestionIdx = 0;

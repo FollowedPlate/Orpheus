@@ -1,9 +1,34 @@
 use crate::models::{
-    AnswerEvaluation, ChatMessage, ChatRequest, ChatResponse, LlmProvider, LlmQuestion,
-    QuestionStyle, Settings,
+    AnswerEvaluation, BookMetadata, ChatMessage, ChatRequest, ChatResponse, LlmProvider,
+    LlmQuestion, QuestionStyle, Settings,
 };
 
-fn build_questions_prompt(context: &str, style: &QuestionStyle, count: usize) -> String {
+/// OpenAI uses `{endpoint}/chat/completions` where endpoint is typically `.../v1`.
+/// Ollama uses the same response shape via `{host}/v1/chat/completions`; accept either
+/// `http://host:port` or `http://host:port/v1` as the configured base.
+fn chat_completions_url(endpoint: &str, provider: &LlmProvider) -> String {
+    let base = endpoint.trim_end_matches('/');
+    match provider {
+        LlmProvider::OpenAI => format!("{base}/chat/completions"),
+        LlmProvider::Ollama => {
+            let root = if base.ends_with("/v1") {
+                base.to_string()
+            } else {
+                format!("{base}/v1")
+            };
+            format!("{root}/chat/completions")
+        }
+    }
+}
+
+fn build_questions_prompt(
+    context: &str,
+    style: &QuestionStyle,
+    count: usize,
+    book_title: Option<&str>,
+    book_author: Option<&str>,
+    metadata: Option<&BookMetadata>,
+) -> String {
     let style_instruction = match style {
         QuestionStyle::MultipleChoice => {
             "Generate ONLY multiple-choice questions. Each question must have exactly 4 options labeled A, B, C, D. Mark the correct answer."
@@ -16,12 +41,56 @@ fn build_questions_prompt(context: &str, style: &QuestionStyle, count: usize) ->
         }
     };
 
+    let title_line = book_title.unwrap_or("Unknown");
+    let author_line = book_author.unwrap_or("Unknown");
+    let metadata_block = if let Some(meta) = metadata {
+        let themes = if meta.themes.is_empty() {
+            "Unknown".to_string()
+        } else {
+            meta.themes.join(", ")
+        };
+        let characters = if meta.key_characters.is_empty() {
+            "Unknown".to_string()
+        } else {
+            meta.key_characters.join(", ")
+        };
+
+        format!(
+            r#"BOOK CONTEXT:
+Title: {title_line}
+Author: {author_line}
+Genre: {}
+Setting: {}
+Year Written: {}
+Summary: {}
+Themes: {themes}
+Key Characters: {characters}
+Notable Context: {}
+"#,
+            meta.genre,
+            meta.setting,
+            meta.year_written,
+            meta.summary,
+            meta.notable_context,
+        )
+    } else {
+        format!(
+            r#"BOOK CONTEXT:
+Title: {title_line}
+Author: {author_line}
+"#
+        )
+    };
+
     format!(
-        r#"You are a reading comprehension assistant. Based on the following text excerpt, generate {count} comprehension questions.
+        r#"You are a reading comprehension assistant. Use the book context and excerpt below to generate {count} comprehension questions.
+
+{metadata_block}
+Use the book context to ask nuanced and relevant questions about the excerpt.
 
 {style_instruction}
 
-Respond with ONLY a JSON array in this exact format:
+Respond with ONLY a JSON array in this exact format (no other text or formatting):
 [
   {{
     "question": "Question text here",
@@ -61,16 +130,47 @@ Respond with ONLY a JSON object:
     )
 }
 
+fn build_book_metadata_prompt(
+    text_excerpt: &str,
+    title: &str,
+    author: Option<&str>,
+) -> String {
+    let author_line = author.unwrap_or("Unknown");
+    format!(
+        r#"You are a literary analysis assistant. Infer structured metadata for a book from known details and an excerpt.
+
+Known details:
+Title: {title}
+Author: {author_line}
+
+Respond with ONLY a JSON object in this exact shape:
+{{
+  "genre": "Primary genre and subgenre if known",
+  "year_written": "Estimated or known year/time period the book was written",
+  "summary": "2-3 sentence high-level summary of what the book is about",
+  "themes": ["theme 1", "theme 2", "theme 3"],
+  "setting": "Primary setting (time/place)",
+  "key_characters": ["Character 1: brief role", "Character 2: brief role"],
+  "notable_context": "Important background for comprehension questions"
+}}
+
+Rules:
+- If uncertain, provide best-effort estimates and say \"Unknown\" only when necessary.
+- Keep summary concise and factual.
+- Ensure valid JSON.
+
+BOOK EXCERPT:
+{text_excerpt}"#
+    )
+}
+
 async fn call_llm(
     settings: &Settings,
     prompt: String,
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
 
-    let url = match settings.llm_provider {
-        LlmProvider::OpenAI => format!("{}/chat/completions", settings.llm_endpoint),
-        LlmProvider::Ollama => format!("{}/api/chat", settings.llm_endpoint),
-    };
+    let url = chat_completions_url(&settings.llm_endpoint, &settings.llm_provider);
 
     let messages = vec![ChatMessage {
         role: "user".to_string(),
@@ -119,9 +219,19 @@ pub async fn generate_questions(
     settings: Settings,
     context_text: String,
     question_count: usize,
+    book_title: Option<String>,
+    book_author: Option<String>,
+    book_metadata: Option<BookMetadata>,
 ) -> Result<Vec<LlmQuestion>, String> {
     let count = question_count.clamp(1, 5);
-    let prompt = build_questions_prompt(&context_text, &settings.question_style, count);
+    let prompt = build_questions_prompt(
+        &context_text,
+        &settings.question_style,
+        count,
+        book_title.as_deref(),
+        book_author.as_deref(),
+        book_metadata.as_ref(),
+    );
 
     let response = call_llm(&settings, prompt).await?;
 
@@ -131,6 +241,23 @@ pub async fn generate_questions(
 
     serde_json::from_str::<Vec<LlmQuestion>>(&json_str)
         .map_err(|e| format!("Failed to parse questions JSON: {e}\nRaw: {json_str}"))
+}
+
+#[tauri::command]
+pub async fn generate_book_metadata(
+    settings: Settings,
+    text_excerpt: String,
+    book_title: String,
+    book_author: Option<String>,
+) -> Result<BookMetadata, String> {
+    let prompt = build_book_metadata_prompt(&text_excerpt, &book_title, book_author.as_deref());
+    let response = call_llm(&settings, prompt).await?;
+
+    let json_str = extract_json_object(&response)
+        .ok_or_else(|| format!("Could not find JSON in LLM response: {response}"))?;
+
+    serde_json::from_str::<BookMetadata>(&json_str)
+        .map_err(|e| format!("Failed to parse metadata JSON: {e}\nRaw: {json_str}"))
 }
 
 #[tauri::command]

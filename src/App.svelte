@@ -12,6 +12,7 @@
   import SettingsPanel from './lib/components/SettingsPanel.svelte';
   import ComprehensionQuiz from './lib/components/ComprehensionQuiz.svelte';
   import ReadingStats from './lib/components/ReadingStats.svelte';
+  import BookDetail from './lib/components/BookDetail.svelte';
 
   onMount(async () => {
     // Load persisted data
@@ -46,7 +47,7 @@
       const rs = get(readerStore);
       if (rs.showSettings) {
         readerStore.setShowSettings(false);
-      } else if (rs.view === 'reader') {
+      } else if (rs.view === 'reader' || rs.view === 'book_detail') {
         readerStore.navigateTo('library');
       }
     });
@@ -66,6 +67,8 @@
 >
   {#if $readerStore.view === 'library'}
     <Library />
+  {:else if $readerStore.view === 'book_detail'}
+    <BookDetail />
   {:else if $readerStore.view === 'reader'}
     <div class="reader-view">
       <div class="reader-topbar">

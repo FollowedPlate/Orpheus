@@ -188,7 +188,7 @@ Uses `setTimeout` chained per-word (not `setInterval`) so each word gets its own
 
 ### LLM Comprehension Quizzes
 
-If breaks are enabled and comprehension questions are on, when a break triggers the backend sends the last ~300 words of read text to the configured LLM provider and requests a mix of multiple-choice and open-ended questions. Open-ended answers are scored by a follow-up LLM call. Both OpenAI and Ollama use the same OpenAI-compatible chat-completions format, so the HTTP client code is shared.
+If breaks are enabled and comprehension questions are on, when a break triggers the backend sends only the text read **since the last break** (capped by a configurable max word count in LLM settings) to the configured LLM provider and requests a mix of multiple-choice and open-ended questions. Open-ended answers are scored by a follow-up LLM call. Both OpenAI and Ollama use the same OpenAI-compatible chat-completions format, so the HTTP client code is shared.
 
 ### Reading Statistics
 

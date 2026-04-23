@@ -16,9 +16,11 @@ pub fn run() {
             library::add_book_to_library,
             library::remove_book,
             library::start_session,
+            library::update_book_metadata,
             settings::load_settings,
             settings::save_settings,
             llm::generate_questions,
+            llm::generate_book_metadata,
             llm::evaluate_answer,
         ])
         .run(tauri::generate_context!())

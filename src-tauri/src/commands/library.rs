@@ -1,4 +1,4 @@
-use crate::models::{Library, LibraryEntry, ProgressUpdate, ReadingSession};
+use crate::models::{BookMetadata, Library, LibraryEntry, ProgressUpdate, ReadingSession};
 use chrono::Utc;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -104,6 +104,21 @@ pub async fn start_session(app: tauri::AppHandle, book_id: String) -> Result<(),
             average_wpm: 0.0,
             quiz_score: None,
         });
+    }
+
+    save_library(app, library).await
+}
+
+#[tauri::command]
+pub async fn update_book_metadata(
+    app: tauri::AppHandle,
+    book_id: String,
+    metadata: BookMetadata,
+) -> Result<(), String> {
+    let mut library = load_library(app.clone()).await?;
+
+    if let Some(entry) = library.entries.iter_mut().find(|e| e.book.id == book_id) {
+        entry.book.metadata = Some(metadata);
     }
 
     save_library(app, library).await

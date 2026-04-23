@@ -37,12 +37,15 @@ export interface ReaderState {
 
   // App navigation
   view: AppView;
+  selectedBookId: string | null;
   showSettings: boolean;
   showStats: boolean;
 
   // Break/quiz state
   isOnBreak: boolean;
   lastBreakMs: number;
+  /** First word index included in "read since last break" for LLM quiz context. */
+  lastBreakWordIndex: number;
 }
 
 const INITIAL_STATE: ReaderState = {
@@ -64,10 +67,12 @@ const INITIAL_STATE: ReaderState = {
   playingMs: 0,
   isSkipContext: false,
   view: 'library',
+  selectedBookId: null,
   showSettings: false,
   showStats: false,
   isOnBreak: false,
   lastBreakMs: 0,
+  lastBreakWordIndex: 0,
 };
 
 function createReaderStore() {
@@ -245,6 +250,7 @@ function createReaderStore() {
         currentWpm: settings.speed_ramp_enabled ? settings.speed_ramp_start_wpm : settings.wpm,
         bookId,
         view: 'reader',
+        lastBreakWordIndex: startIndex,
       }));
     },
 
@@ -254,14 +260,19 @@ function createReaderStore() {
 
       const settings = getSettings();
 
-      update((s) => ({
-        ...s,
-        isPlaying: true,
-        sessionStartTime: s.sessionStartTime ?? Date.now(),
-        rampStartTime: settings.speed_ramp_enabled && s.rampStartTime === null ? Date.now() : s.rampStartTime,
-        isSkipContext: false,
-        isOnBreak: false,
-      }));
+      update((s) => {
+        const lastBreakWordIndex =
+          s.currentIndex < s.lastBreakWordIndex ? s.currentIndex : s.lastBreakWordIndex;
+        return {
+          ...s,
+          isPlaying: true,
+          sessionStartTime: s.sessionStartTime ?? Date.now(),
+          rampStartTime: settings.speed_ramp_enabled && s.rampStartTime === null ? Date.now() : s.rampStartTime,
+          isSkipContext: false,
+          isOnBreak: false,
+          lastBreakWordIndex,
+        };
+      });
 
       playbackStartTime = Date.now();
 
@@ -299,15 +310,25 @@ function createReaderStore() {
       }
     },
 
-    seekTo(index: number) {
+    seekTo(index: number, showSkipContext = false) {
       clearTimers();
       const state = getState();
+      const settings = getSettings();
       const clamped = Math.max(0, Math.min(index, state.words.length - 1));
       update((s) => ({
         ...s,
         currentIndex: clamped,
         currentDisplay: s.words[clamped] ?? '',
+        isSkipContext: showSkipContext && settings.skip_context_enabled,
       }));
+
+      if (showSkipContext && settings.skip_context_enabled) {
+        if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
+        skipContextTimeoutId = setTimeout(() => {
+          update((s) => ({ ...s, isSkipContext: false }));
+        }, 1500);
+      }
+
       if (state.isPlaying) {
         scheduleNext();
       }
@@ -410,13 +431,22 @@ function createReaderStore() {
         );
       }
 
-      update((s) => ({ ...s, isOnBreak: false }));
-      this.play();
+      update((s) => ({
+        ...s,
+        isOnBreak: false,
+        lastBreakWordIndex: s.currentIndex,
+      }));
+      this.pause();
     },
 
     navigateTo(view: AppView) {
       if (getState().isPlaying) this.pause();
       update((s) => ({ ...s, view }));
+    },
+
+    openBookDetail(bookId: string) {
+      if (getState().isPlaying) this.pause();
+      update((s) => ({ ...s, view: 'book_detail', selectedBookId: bookId }));
     },
 
     setShowSettings(show: boolean) {

@@ -4,7 +4,7 @@
   import { readerStore } from '../stores/reader';
   import { libraryStore } from '../stores/library';
   import { settingsStore } from '../stores/settings';
-  import type { LibraryEntry, ParsedBook } from '../types';
+  import type { BookMetadata, LibraryEntry, ParsedBook, Settings } from '../types';
 
   let opening = false;
   let openError: string | null = null;
@@ -15,6 +15,34 @@
     const bDate = b.book.last_read_at ?? b.book.added_at;
     return new Date(bDate).getTime() - new Date(aDate).getTime();
   });
+
+  function canGenerateMetadata(settings: Settings): boolean {
+    if (settings.llm_provider === 'OpenAI') {
+      return !!settings.llm_api_key?.trim();
+    }
+    return !!settings.llm_endpoint?.trim() && !!settings.llm_model?.trim();
+  }
+
+  async function generateMetadataInBackground(entry: LibraryEntry, parsed: ParsedBook) {
+    if (!canGenerateMetadata($settingsStore)) return;
+
+    try {
+      const maxWords = Math.min(5000, Math.max(500, $settingsStore.metadata_context_max_words));
+      const textExcerpt = parsed.words.slice(0, maxWords).join(' ');
+      if (!textExcerpt.trim()) return;
+
+      const metadata = await invoke<BookMetadata>('generate_book_metadata', {
+        settings: $settingsStore,
+        textExcerpt,
+        bookTitle: entry.book.title,
+        bookAuthor: entry.book.author,
+      });
+
+      await libraryStore.updateBookMetadata(entry.book.id, metadata);
+    } catch (e) {
+      console.warn('Metadata generation skipped/failed:', e);
+    }
+  }
 
   async function openFile() {
     opening = true;
@@ -50,6 +78,7 @@
           word_count: parsed.words.length,
           added_at: new Date().toISOString(),
           last_read_at: null,
+          metadata: null,
         },
         current_word_index: 0,
         progress: 0,
@@ -60,6 +89,7 @@
       await invoke('start_session', { bookId: id });
 
       readerStore.loadBook(parsed, id, 0);
+      void generateMetadataInBackground(entry, parsed);
     } catch (e) {
       openError = String(e);
     } finally {
@@ -77,6 +107,9 @@
 
       await invoke('start_session', { bookId: entry.book.id });
       readerStore.loadBook(parsed, entry.book.id, entry.current_word_index);
+      if (!entry.book.metadata) {
+        void generateMetadataInBackground(entry, parsed);
+      }
     } catch (e) {
       openError = String(e);
     } finally {
@@ -87,6 +120,10 @@
   async function removeBook(id: string) {
     await libraryStore.removeBook(id);
     confirmRemove = null;
+  }
+
+  function openBookDetail(id: string) {
+    readerStore.openBookDetail(id);
   }
 
   function formatDate(dateStr: string | null): string {
@@ -143,7 +180,7 @@
   {:else}
     <div class="book-grid">
       {#each entries as entry (entry.book.id)}
-        <div class="book-card">
+        <div class="book-card" role="button" tabindex="0" onclick={() => openBookDetail(entry.book.id)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openBookDetail(entry.book.id)}>
           <!-- Book spine color based on format -->
           <div
             class="book-spine"
@@ -172,6 +209,14 @@
               {#if entry.book.author}
                 <p class="book-author">{entry.book.author}</p>
               {/if}
+              {#if entry.book.metadata}
+                <p class="book-metadata">
+                  {entry.book.metadata.genre}
+                  {#if entry.book.metadata.year_written}
+                    · {entry.book.metadata.year_written}
+                  {/if}
+                </p>
+              {/if}
               <p class="book-words">{entry.book.word_count.toLocaleString()} words</p>
             </div>
 
@@ -187,7 +232,7 @@
               <span class="last-read">
                 {entry.book.last_read_at ? 'Read ' + formatDate(entry.book.last_read_at) : 'Never read'}
               </span>
-              <button class="read-btn" onclick={() => openBook(entry)} disabled={opening}>
+              <button class="read-btn" onclick={(e) => { e.stopPropagation(); openBook(entry); }} disabled={opening}>
                 {entry.progress > 0 ? 'Continue' : 'Read'}
               </button>
             </div>
@@ -360,6 +405,7 @@
     overflow: hidden;
     display: flex;
     transition: transform 0.15s, box-shadow 0.15s;
+    cursor: pointer;
   }
 
   .book-card:hover {
@@ -443,6 +489,13 @@
     font-size: 11px;
     color: var(--muted);
     margin: 0;
+  }
+
+  .book-metadata {
+    font-size: 11px;
+    color: var(--accent);
+    margin: 0 0 4px 0;
+    font-weight: 500;
   }
 
   .progress-bar-wrap {

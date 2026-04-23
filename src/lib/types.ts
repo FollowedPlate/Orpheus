@@ -1,10 +1,10 @@
-export type OrpAlgorithm = 'Spritz' | 'Center';
+export type OrpAlgorithm = 'Spritz' | 'Center' | 'Dynamic';
 export type AdjacentWordsCount = 1 | 2 | 3 | 'dynamic';
 export type ThemePreset = 'Light' | 'Dark' | 'Sepia' | 'HighContrast' | 'Custom';
 export type LlmProvider = 'OpenAI' | 'Ollama';
 export type QuestionStyle = 'MultipleChoice' | 'OpenEnded' | 'Mixed';
 export type QuestionType = 'MultipleChoice' | 'OpenEnded';
-export type AppView = 'library' | 'reader';
+export type AppView = 'library' | 'reader' | 'book_detail';
 
 export interface ShortcutMap {
   play_pause: string;
@@ -54,8 +54,22 @@ export interface Settings {
   llm_endpoint: string;
   llm_api_key: string | null;
   llm_model: string;
+  /** Max words of read text sent to the LLM per break (from since-last-break window). */
+  quiz_context_max_words: number;
+  /** Max words from the beginning of a book sent to the LLM for metadata generation. */
+  metadata_context_max_words: number;
   question_style: QuestionStyle;
   shortcuts: ShortcutMap;
+}
+
+export interface BookMetadata {
+  genre: string;
+  year_written: string;
+  summary: string;
+  themes: string[];
+  setting: string;
+  key_characters: string[];
+  notable_context: string;
 }
 
 export interface Book {
@@ -67,6 +81,7 @@ export interface Book {
   word_count: number;
   added_at: string;
   last_read_at: string | null;
+  metadata: BookMetadata | null;
 }
 
 export interface ReadingSession {
@@ -158,6 +173,8 @@ export const DEFAULT_SETTINGS: Settings = {
   llm_endpoint: 'https://api.openai.com/v1',
   llm_api_key: null,
   llm_model: 'gpt-4o-mini',
+  quiz_context_max_words: 300,
+  metadata_context_max_words: 2000,
   question_style: 'Mixed',
   shortcuts: DEFAULT_SHORTCUTS,
 };

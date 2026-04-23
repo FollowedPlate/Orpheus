@@ -8,11 +8,23 @@ export function getOrpIndex(word: string, algorithm: OrpAlgorithm): number {
   // but apply the index to the original word.
   const len = word.length;
   if (len === 0) return 0;
+  const spritzIndex = getSpritzOrpIndex(len);
 
   if (algorithm === 'Center') {
     return Math.floor((len - 1) / 2);
   }
 
+  if (algorithm === 'Dynamic') {
+    if (len < 13) return spritzIndex;
+    const centerIndex = Math.floor((len - 1) / 2);
+    const blend = Math.min(1, (len - 13) / 12);
+    return Math.round(spritzIndex + (centerIndex - spritzIndex) * blend);
+  }
+
+  return spritzIndex;
+}
+
+function getSpritzOrpIndex(len: number): number {
   // Spritz-style: optimized for visual recognition
   if (len === 1) return 0;
   if (len <= 5) return 1;

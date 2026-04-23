@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import type { Library, LibraryEntry } from '../types';
+import type { BookMetadata, Library, LibraryEntry } from '../types';
 
 function createLibraryStore() {
   const { subscribe, set, update } = writable<Library>({ entries: [] });
@@ -39,6 +39,21 @@ function createLibraryStore() {
         }));
       } catch (e) {
         console.error('Failed to remove book:', e);
+      }
+    },
+
+    async updateBookMetadata(bookId: string, metadata: BookMetadata) {
+      try {
+        await invoke('update_book_metadata', { bookId, metadata });
+        update((lib) => {
+          const entry = lib.entries.find((e) => e.book.id === bookId);
+          if (entry) {
+            entry.book.metadata = metadata;
+          }
+          return { ...lib };
+        });
+      } catch (e) {
+        console.error('Failed to update book metadata:', e);
       }
     },
 

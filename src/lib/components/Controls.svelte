@@ -12,7 +12,7 @@
   function handleScrub(e: Event) {
     const input = e.target as HTMLInputElement;
     const idx = Math.round((parseFloat(input.value) / 100) * ($state.totalWords - 1));
-    readerStore.seekTo(idx);
+    readerStore.seekTo(idx, true);
   }
 
   function handleWpmInput(e: Event) {

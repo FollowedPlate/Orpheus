@@ -45,7 +45,7 @@
   }
 
   const THEME_PRESETS = ['Light', 'Dark', 'Sepia', 'HighContrast', 'Custom'] as const;
-  const ORP_ALGORITHMS = ['Spritz', 'Center'] as const;
+  const ORP_ALGORITHMS = ['Spritz', 'Center', 'Dynamic'] as const;
   const LLM_PROVIDERS = ['OpenAI', 'Ollama'] as const;
   const QUESTION_STYLES = ['MultipleChoice', 'OpenEnded', 'Mixed'] as const;
 
@@ -63,6 +63,8 @@
   };
 </script>
 
+<svelte:options runes={false} />
+
 <svelte:window onkeydown={handleShortcutKey} />
 
 <div class="settings-backdrop" onclick={close} role="presentation"></div>
@@ -75,7 +77,7 @@
 
   <!-- Tab bar -->
   <div class="tab-bar" role="tablist">
-    {#each (['display', 'speed', 'behavior', 'theme', 'llm', 'shortcuts'] as const) as tab}
+    {#each (['display', 'speed', 'behavior', 'theme', 'llm', 'shortcuts'] as const) as tab (tab)}
       <button
         class="tab-btn"
         class:active={activeTab === tab}
@@ -95,7 +97,7 @@
         <label class="field">
           <span class="field-label">Font</span>
           <select bind:value={s.font} onchange={saveSettings}>
-            {#each AVAILABLE_FONTS as font}
+            {#each AVAILABLE_FONTS as font (font)}
               <option value={font} style="font-family: '{font}'">{font}</option>
             {/each}
           </select>
@@ -116,7 +118,7 @@
         <label class="field">
           <span class="field-label">ORP Algorithm</span>
           <div class="radio-group">
-            {#each ORP_ALGORITHMS as alg}
+            {#each ORP_ALGORITHMS as alg (alg)}
               <label class="radio-label">
                 <input
                   type="radio"
@@ -125,7 +127,13 @@
                   bind:group={s.orp_algorithm}
                   onchange={saveSettings}
                 />
-                <span>{alg === 'Spritz' ? 'Spritz (by length)' : 'Center'}</span>
+                <span>
+                  {alg === 'Spritz'
+                    ? 'Spritz (by length)'
+                    : alg === 'Center'
+                    ? 'Center'
+                    : 'Dynamic (Spritz -> Center for long words)'}
+                </span>
               </label>
             {/each}
           </div>
@@ -301,7 +309,7 @@
           <label class="field">
             <span class="field-label">Adjacent word count</span>
             <div class="radio-group">
-              {#each ADJACENT_COUNTS as opt}
+              {#each ADJACENT_COUNTS as opt (opt.value)}
                 <label class="radio-label">
                   <input
                     type="radio"
@@ -331,7 +339,7 @@
               type="range"
               min="0"
               max="120"
-              step="5"
+              step="1"
               bind:value={s.break_interval_minutes}
               onchange={saveSettings}
             />
@@ -357,7 +365,7 @@
         <label class="field">
           <span class="field-label">Theme Preset</span>
           <div class="preset-grid">
-            {#each THEME_PRESETS as preset}
+            {#each THEME_PRESETS as preset (preset)}
               <button
                 class="preset-btn"
                 class:active={s.theme_preset === preset}
@@ -440,7 +448,7 @@
         <label class="field">
           <span class="field-label">Provider</span>
           <div class="radio-group">
-            {#each LLM_PROVIDERS as provider}
+            {#each LLM_PROVIDERS as provider (provider)}
               <label class="radio-label">
                 <input
                   type="radio"
@@ -461,9 +469,15 @@
             type="url"
             class="text-input"
             bind:value={s.llm_endpoint}
-            placeholder={s.llm_provider === 'Ollama' ? 'http://localhost:11434/v1' : 'https://api.openai.com/v1'}
+            placeholder={s.llm_provider === 'Ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
             onchange={saveSettings}
           />
+          {#if s.llm_provider === 'Ollama'}
+            <p class="section-subtitle" style="margin-top: 6px;">
+              Base URL only (e.g. port 11434). Requests use OpenAI-compatible
+              <code>/v1/chat/completions</code>; you may include <code>/v1</code> in the URL or omit it.
+            </p>
+          {/if}
         </label>
 
         {#if s.llm_provider === 'OpenAI'}
@@ -491,9 +505,45 @@
         </label>
 
         <label class="field">
+          <span class="field-label">Quiz context max words (since last break)</span>
+          <div class="number-row">
+            <input
+              type="range"
+              min="50"
+              max="2000"
+              step="10"
+              bind:value={s.quiz_context_max_words}
+              onchange={saveSettings}
+            />
+            <span class="num-val">{s.quiz_context_max_words}</span>
+          </div>
+          <p class="section-subtitle" style="margin-top: 6px;">
+            Only text read since the last break is sent to the LLM, up to this many words.
+          </p>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Metadata context max words (start of book)</span>
+          <div class="number-row">
+            <input
+              type="range"
+              min="500"
+              max="5000"
+              step="100"
+              bind:value={s.metadata_context_max_words}
+              onchange={saveSettings}
+            />
+            <span class="num-val">{s.metadata_context_max_words}</span>
+          </div>
+          <p class="section-subtitle" style="margin-top: 6px;">
+            Number of initial words sent to the LLM to infer book metadata.
+          </p>
+        </label>
+
+        <label class="field">
           <span class="field-label">Question Style</span>
           <div class="radio-group">
-            {#each QUESTION_STYLES as style}
+            {#each QUESTION_STYLES as style (style)}
               <label class="radio-label">
                 <input
                   type="radio"
@@ -519,7 +569,7 @@
     {:else if activeTab === 'shortcuts'}
       <div class="section">
         <p class="section-subtitle">Click a shortcut and press a key combination to rebind.</p>
-        {#each Object.entries(SHORTCUT_LABELS) as [action, label]}
+        {#each Object.entries(SHORTCUT_LABELS) as [action, label] (action)}
           <div class="shortcut-row">
             <span class="shortcut-label">{label}</span>
             <button

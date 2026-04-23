@@ -11,6 +11,18 @@ pub struct Book {
     pub word_count: usize,
     pub added_at: DateTime<Utc>,
     pub last_read_at: Option<DateTime<Utc>>,
+    pub metadata: Option<BookMetadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BookMetadata {
+    pub genre: String,
+    pub year_written: String,
+    pub summary: String,
+    pub themes: Vec<String>,
+    pub setting: String,
+    pub key_characters: Vec<String>,
+    pub notable_context: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +56,7 @@ pub struct ParsedBook {
 pub enum OrpAlgorithm {
     Spritz,
     Center,
+    Dynamic,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -148,6 +161,10 @@ pub struct Settings {
     pub llm_endpoint: String,
     pub llm_api_key: Option<String>,
     pub llm_model: String,
+    /// Max words of read text sent to the LLM per break (from since-last-break window).
+    pub quiz_context_max_words: u32,
+    /// Max words from the beginning of a book sent to the LLM for metadata generation.
+    pub metadata_context_max_words: u32,
     pub question_style: QuestionStyle,
     pub shortcuts: ShortcutMap,
 }
@@ -189,6 +206,8 @@ impl Default for Settings {
             llm_endpoint: "https://api.openai.com/v1".to_string(),
             llm_api_key: None,
             llm_model: "gpt-4o-mini".to_string(),
+            quiz_context_max_words: 300,
+            metadata_context_max_words: 2000,
             question_style: QuestionStyle::Mixed,
             shortcuts: ShortcutMap::default(),
         }
