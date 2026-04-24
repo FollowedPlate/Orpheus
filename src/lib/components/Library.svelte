@@ -222,7 +222,10 @@
               <span class="book-format">{entry.book.file_format.toUpperCase()}</span>
               <button
                 class="remove-btn"
-                onclick={() => (confirmRemove = entry.book.id)}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  confirmRemove = entry.book.id;
+                }}
                 aria-label="Remove book"
                 title="Remove from library"
               >×</button>
@@ -263,11 +266,21 @@
           </div>
 
           {#if confirmRemove === entry.book.id}
-            <div class="confirm-overlay">
+            <div class="confirm-overlay" onclick={(e) => e.stopPropagation()}>
               <p>Remove from library?</p>
               <div class="confirm-actions">
-                <button class="btn-cancel" onclick={() => (confirmRemove = null)}>Cancel</button>
-                <button class="btn-confirm" onclick={() => removeBook(entry.book.id)}>Remove</button>
+                <button
+                  class="btn-cancel"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    confirmRemove = null;
+                  }}>Cancel</button>
+                <button
+                  class="btn-confirm"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    removeBook(entry.book.id);
+                  }}>Remove</button>
               </div>
             </div>
           {/if}
