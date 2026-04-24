@@ -406,6 +406,13 @@ function createReaderStore() {
       }
     },
 
+    skipWord(direction: 'forward' | 'back') {
+      const state = getState();
+      if (state.words.length === 0) return;
+      const delta = direction === 'forward' ? 1 : -1;
+      this.seekTo(state.currentIndex + delta, true, false);
+    },
+
     skipToSentence(direction: 'forward' | 'back') {
       cancelAnimation();
       const wasPlaying = getState().isPlaying;

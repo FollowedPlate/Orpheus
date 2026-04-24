@@ -32,6 +32,8 @@
     shortcuts.on('play_pause', () => readerStore.toggle());
     shortcuts.on('skip_forward_sentence', () => readerStore.skipToSentence('forward'));
     shortcuts.on('skip_back_sentence', () => readerStore.skipToSentence('back'));
+    shortcuts.on('skip_forward_word', () => readerStore.skipWord('forward'));
+    shortcuts.on('skip_back_word', () => readerStore.skipWord('back'));
     shortcuts.on('skip_forward_paragraph', () => readerStore.skipToParagraph('forward'));
     shortcuts.on('skip_back_paragraph', () => readerStore.skipToParagraph('back'));
     shortcuts.on('increase_wpm', () => readerStore.adjustWpm(get(settingsStore).wpm_step));

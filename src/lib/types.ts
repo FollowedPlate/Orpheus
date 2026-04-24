@@ -10,6 +10,8 @@ export interface ShortcutMap {
   play_pause: string;
   skip_forward_sentence: string;
   skip_back_sentence: string;
+  skip_forward_word: string;
+  skip_back_word: string;
   skip_forward_paragraph: string;
   skip_back_paragraph: string;
   increase_wpm: string;
@@ -131,6 +133,8 @@ export const DEFAULT_SHORTCUTS: ShortcutMap = {
   play_pause: 'Space',
   skip_forward_sentence: 'ArrowRight',
   skip_back_sentence: 'ArrowLeft',
+  skip_forward_word: 'Shift+ArrowRight',
+  skip_back_word: 'Shift+ArrowLeft',
   skip_forward_paragraph: 'Ctrl+ArrowRight',
   skip_back_paragraph: 'Ctrl+ArrowLeft',
   increase_wpm: 'ArrowUp',

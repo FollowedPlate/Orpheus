@@ -2,7 +2,7 @@
   import { settingsStore } from '../stores/settings';
   import { readerStore } from '../stores/reader';
   import { shortcuts, eventToKeyCombo } from '../utils/shortcuts';
-  import { AVAILABLE_FONTS } from '../types';
+  import { AVAILABLE_FONTS, DEFAULT_SHORTCUTS } from '../types';
   import type { Settings, ShortcutAction, AdjacentWordsCount } from '../types';
 
   const ADJACENT_COUNTS: { value: AdjacentWordsCount; label: string }[] = [
@@ -53,6 +53,8 @@
     play_pause: 'Play / Pause',
     skip_forward_sentence: 'Skip Forward (Sentence)',
     skip_back_sentence: 'Skip Back (Sentence)',
+    skip_forward_word: 'Skip Forward (Word)',
+    skip_back_word: 'Skip Back (Word)',
     skip_forward_paragraph: 'Skip Forward (Paragraph)',
     skip_back_paragraph: 'Skip Back (Paragraph)',
     increase_wpm: 'Increase WPM',
@@ -610,18 +612,7 @@
         <button
           class="reset-btn"
           onclick={() => {
-            s = { ...s, shortcuts: { ...{
-              play_pause: 'Space',
-              skip_forward_sentence: 'ArrowRight',
-              skip_back_sentence: 'ArrowLeft',
-              skip_forward_paragraph: 'Ctrl+ArrowRight',
-              skip_back_paragraph: 'Ctrl+ArrowLeft',
-              increase_wpm: 'ArrowUp',
-              decrease_wpm: 'ArrowDown',
-              toggle_focus: 'KeyF',
-              open_settings: 'Ctrl+Comma',
-              return_to_library: 'Escape',
-            }}};
+            s = { ...s, shortcuts: { ...DEFAULT_SHORTCUTS } };
             saveSettings();
           }}
         >Reset to Defaults</button>

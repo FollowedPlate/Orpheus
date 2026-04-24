@@ -5,6 +5,14 @@ fn default_skip_animation_duration_ms() -> u32 {
     450
 }
 
+fn default_shortcut_skip_forward_word() -> String {
+    "Shift+ArrowRight".to_string()
+}
+
+fn default_shortcut_skip_back_word() -> String {
+    "Shift+ArrowLeft".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Book {
     pub id: String,
@@ -103,6 +111,10 @@ pub struct ShortcutMap {
     pub play_pause: String,
     pub skip_forward_sentence: String,
     pub skip_back_sentence: String,
+    #[serde(default = "default_shortcut_skip_forward_word")]
+    pub skip_forward_word: String,
+    #[serde(default = "default_shortcut_skip_back_word")]
+    pub skip_back_word: String,
     pub skip_forward_paragraph: String,
     pub skip_back_paragraph: String,
     pub increase_wpm: String,
@@ -118,6 +130,8 @@ impl Default for ShortcutMap {
             play_pause: "Space".to_string(),
             skip_forward_sentence: "ArrowRight".to_string(),
             skip_back_sentence: "ArrowLeft".to_string(),
+            skip_forward_word: default_shortcut_skip_forward_word(),
+            skip_back_word: default_shortcut_skip_back_word(),
             skip_forward_paragraph: "Ctrl+ArrowRight".to_string(),
             skip_back_paragraph: "Ctrl+ArrowLeft".to_string(),
             increase_wpm: "ArrowUp".to_string(),
