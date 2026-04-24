@@ -266,8 +266,19 @@
           </div>
 
           {#if confirmRemove === entry.book.id}
-            <div class="confirm-overlay" onclick={(e) => e.stopPropagation()}>
-              <p>Remove from library?</p>
+            <div
+              class="confirm-overlay"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="confirm-remove-title-{entry.book.id}"
+              tabindex="-1"
+              onclick={(e) => e.stopPropagation()}
+              onkeydown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Escape') confirmRemove = null;
+              }}
+            >
+              <p id="confirm-remove-title-{entry.book.id}">Remove from library?</p>
               <div class="confirm-actions">
                 <button
                   class="btn-cancel"
