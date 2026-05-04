@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import MissingBookFileCallout from './MissingBookFileCallout.svelte';
@@ -7,9 +8,15 @@
   import { libraryStore } from '../stores/library';
   import { settingsStore } from '../stores/settings';
   import type { Book, BookMetadata, Settings } from '../types';
+  import {
+    bookNeedsLlmMetadataEnhancement,
+    filePathsEqual,
+    mergeReopenBookWithParsed,
+  } from '../utils/bookReopen';
 
   let opening = false;
   let openError: string | null = null;
+  let reopenWarning: string | null = null;
   let missingFileEntry: Book | null = null;
   let confirmRemove: string | null = null;
 
@@ -24,12 +31,6 @@
       return !!settings.llm_api_key?.trim();
     }
     return !!settings.llm_endpoint?.trim() && !!settings.llm_model?.trim();
-  }
-
-  function shouldGenerateMetadataFromParser(parsed: Book): boolean {
-    const themes = parsed.themes ?? [];
-    const kc = parsed.key_characters ?? [];
-    return themes.length === 0 || kc.length === 0;
   }
 
   async function generateMetadataInBackground(entry: Book, parsed: Book) {
@@ -56,6 +57,7 @@
   async function openFile() {
     opening = true;
     openError = null;
+    reopenWarning = null;
     missingFileEntry = null;
     try {
       const selected = await open({
@@ -76,35 +78,50 @@
       const filePath = selected;
       const parsed = await invoke<Book>('parse_book', { path: filePath });
 
-      // Build library entry (omit parsed body fields — not persisted)
-      const id = crypto.randomUUID();
-      const wc = parsed.words?.length ?? 0;
-      const entry: Book = {
-        id,
-        title: parsed.title,
-        author: parsed.author ?? null,
-        file_path: filePath,
-        file_format: filePath.split('.').pop()?.toLowerCase() ?? 'txt',
-        word_count: wc,
-        added_at: new Date().toISOString(),
-        last_read_at: null,
-        current_word_index: 0,
-        progress: 0,
-        sessions: [],
-        genre: parsed.genre ?? null,
-        year_written: parsed.year_written ?? null,
-        summary: parsed.summary ?? null,
-        themes: parsed.themes ?? null,
-        setting: parsed.setting ?? null,
-        key_characters: parsed.key_characters ?? null,
-        notable_context: parsed.notable_context ?? null,
-      };
+      const existing = get(libraryStore).entries.find((e) => filePathsEqual(e.file_path, filePath));
+
+      let entry: Book;
+      if (existing?.id) {
+        const { entry: merged, fileLikelyChanged } = mergeReopenBookWithParsed(
+          existing,
+          parsed,
+          filePath,
+        );
+        entry = merged;
+        if (fileLikelyChanged) {
+          reopenWarning =
+            "This file's word count changed since it was added to your library. Your reading position was adjusted to stay in range. If you replaced the file with different content, your saved place may no longer line up with the text you expect.";
+        }
+      } else {
+        const id = crypto.randomUUID();
+        const wc = parsed.words?.length ?? 0;
+        entry = {
+          id,
+          title: parsed.title,
+          author: parsed.author ?? null,
+          file_path: filePath,
+          file_format: filePath.split('.').pop()?.toLowerCase() ?? 'txt',
+          word_count: wc,
+          added_at: new Date().toISOString(),
+          last_read_at: null,
+          current_word_index: 0,
+          progress: 0,
+          sessions: [],
+          genre: parsed.genre ?? null,
+          year_written: parsed.year_written ?? null,
+          summary: parsed.summary ?? null,
+          themes: parsed.themes ?? null,
+          setting: parsed.setting ?? null,
+          key_characters: parsed.key_characters ?? null,
+          notable_context: parsed.notable_context ?? null,
+        };
+      }
 
       await libraryStore.addBook(entry);
-      await invoke('start_session', { bookId: id });
+      await invoke('start_session', { bookId: entry.id! });
 
-      readerStore.loadBook(parsed, id, 0);
-      if (shouldGenerateMetadataFromParser(parsed)) {
+      readerStore.loadBook(parsed, entry.id!, entry.current_word_index ?? 0);
+      if (bookNeedsLlmMetadataEnhancement(entry)) {
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
@@ -130,7 +147,7 @@
 
       await invoke('start_session', { bookId: entry.id! });
       readerStore.loadBook(parsed, entry.id!, entry.current_word_index ?? 0);
-      if (shouldGenerateMetadataFromParser(parsed)) {
+      if (bookNeedsLlmMetadataEnhancement(entry)) {
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
@@ -198,6 +215,11 @@
         if (next) await openBook(next);
       }}
     />
+  {:else if reopenWarning}
+    <div class="warning-banner" role="status">
+      <span>{reopenWarning}</span>
+      <button type="button" onclick={() => (reopenWarning = null)} aria-label="Dismiss">×</button>
+    </div>
   {:else if openError}
     <div class="error-banner">
       <span>{openError}</span>
@@ -402,6 +424,25 @@
   .btn-open.large {
     padding: 14px 28px;
     font-size: 16px;
+  }
+
+  .warning-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: color-mix(in srgb, #ff9800 18%, transparent);
+    border: 1px solid #ff9800;
+    color: var(--text);
+    padding: 10px 24px;
+    font-size: 13px;
+  }
+
+  .warning-banner button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 18px;
   }
 
   .error-banner {

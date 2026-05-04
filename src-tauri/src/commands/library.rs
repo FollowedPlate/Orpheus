@@ -31,6 +31,15 @@ struct LegacyLibrary {
     entries: Vec<LegacyLibraryEntry>,
 }
 
+fn library_paths_equivalent(a: &Option<String>, b: &Option<String>) -> bool {
+    match (a.as_deref(), b.as_deref()) {
+        (Some(x), Some(y)) => {
+            x.replace('\\', "/").to_lowercase() == y.replace('\\', "/").to_lowercase()
+        }
+        _ => false,
+    }
+}
+
 fn library_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
         .path()
@@ -156,8 +165,10 @@ pub async fn update_progress(
 pub async fn add_book_to_library(app: tauri::AppHandle, entry: Book) -> Result<(), String> {
     let mut library = load_library(app.clone()).await?;
 
-    // Remove existing entry for same file if present
-    library.entries.retain(|e| e.file_path != entry.file_path);
+    // Remove existing entry for same file if present (path compare is case- and slash-insensitive)
+    library
+        .entries
+        .retain(|e| !library_paths_equivalent(&e.file_path, &entry.file_path));
 
     library.entries.push(entry);
     save_library(app, library).await

@@ -2,6 +2,11 @@ import { writable } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import type { Book, BookMetadata, Library } from '../types';
 
+function pathKey(p: string | null | undefined): string {
+  if (!p) return '';
+  return p.replace(/\\/g, '/').toLowerCase();
+}
+
 function createLibraryStore() {
   const { subscribe, set, update } = writable<Library>({ entries: [] });
 
@@ -22,7 +27,7 @@ function createLibraryStore() {
         await invoke('add_book_to_library', { entry });
         update((lib) => {
           const filtered = lib.entries.filter(
-            (e) => e.file_path !== entry.file_path,
+            (e) => pathKey(e.file_path) !== pathKey(entry.file_path),
           );
           return { entries: [...filtered, entry] };
         });
