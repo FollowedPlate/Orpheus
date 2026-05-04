@@ -110,6 +110,7 @@ export interface Library {
 export interface ParsedBook {
   title: string;
   author: string | null;
+  metadata: BookMetadata | null;
   words: string[];
   chapter_indices: number[];
   paragraph_indices: number[];

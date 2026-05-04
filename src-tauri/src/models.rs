@@ -58,6 +58,7 @@ pub struct ReadingSession {
 pub struct ParsedBook {
     pub title: String,
     pub author: Option<String>,
+    pub metadata: Option<BookMetadata>,
     pub words: Vec<String>,
     pub chapter_indices: Vec<usize>,
     pub paragraph_indices: Vec<usize>,

@@ -26,6 +26,10 @@
     return !!settings.llm_endpoint?.trim() && !!settings.llm_model?.trim();
   }
 
+  function shouldGenerateMetadataFromParser(metadata: BookMetadata | null | undefined): boolean {
+    return !metadata || metadata.themes.length === 0 || metadata.key_characters.length === 0;
+  }
+
   async function generateMetadataInBackground(entry: LibraryEntry, parsed: ParsedBook) {
     if (!canGenerateMetadata($settingsStore)) return;
 
@@ -57,7 +61,7 @@
         filters: [
           {
             name: 'Books',
-            extensions: ['txt', 'pdf', 'epub', 'azw3', 'mobi'],
+            extensions: ['txt', 'pdf', 'epub', 'fb2', 'azw3', 'mobi'],
           },
         ],
       });
@@ -82,7 +86,7 @@
           word_count: parsed.words.length,
           added_at: new Date().toISOString(),
           last_read_at: null,
-          metadata: null,
+          metadata: parsed.metadata ?? null,
         },
         current_word_index: 0,
         progress: 0,
@@ -93,7 +97,9 @@
       await invoke('start_session', { bookId: id });
 
       readerStore.loadBook(parsed, id, 0);
-      void generateMetadataInBackground(entry, parsed);
+      if (shouldGenerateMetadataFromParser(parsed.metadata)) {
+        void generateMetadataInBackground(entry, parsed);
+      }
     } catch (e) {
       if (isMissingBookFileError(e)) {
         openError =
@@ -117,7 +123,7 @@
 
       await invoke('start_session', { bookId: entry.book.id });
       readerStore.loadBook(parsed, entry.book.id, entry.current_word_index);
-      if (!entry.book.metadata) {
+      if (shouldGenerateMetadataFromParser(parsed.metadata)) {
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
@@ -196,7 +202,7 @@
     <div class="empty-state">
       <div class="empty-icon">📚</div>
       <h2>No books yet</h2>
-      <p>Open a .txt, .pdf, .epub, or .azw3 file to get started.</p>
+      <p>Open a .txt, .pdf, .epub, .fb2, or .azw3 file to get started.</p>
       <button class="btn-open large" onclick={openFile} disabled={opening}>
         Open a Book
       </button>

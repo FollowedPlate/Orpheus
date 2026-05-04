@@ -21,6 +21,10 @@
     return !!$settingsStore.llm_endpoint?.trim() && !!$settingsStore.llm_model?.trim();
   }
 
+  function shouldGenerateMetadataFromParser(metadata: BookMetadata | null | undefined): boolean {
+    return !metadata || metadata.themes.length === 0 || metadata.key_characters.length === 0;
+  }
+
   async function generateMetadataInBackground(targetEntry: LibraryEntry, parsed: ParsedBook) {
     if (!canGenerateMetadata()) return;
     try {
@@ -49,7 +53,7 @@
       const parsed = await invoke<ParsedBook>('parse_book', { path: entry.book.file_path });
       await invoke('start_session', { bookId: entry.book.id });
       readerStore.loadBook(parsed, entry.book.id, entry.current_word_index);
-      if (!entry.book.metadata) {
+      if (shouldGenerateMetadataFromParser(parsed.metadata)) {
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {

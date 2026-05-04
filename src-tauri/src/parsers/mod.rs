@@ -1,5 +1,6 @@
-pub mod azw3;
 pub mod epub;
+pub mod fb2;
+pub mod mobi;
 pub mod pdf;
 pub mod txt;
 
@@ -70,6 +71,7 @@ pub fn process_text(text: &str, title: &str, author: Option<String>) -> ParsedBo
     ParsedBook {
         title: title.to_string(),
         author,
+        metadata: None,
         words,
         chapter_indices,
         paragraph_indices,
@@ -117,4 +119,77 @@ fn is_chapter_heading(text: &str) -> bool {
     }
 
     false
+}
+
+/// Strip HTML tags from a string while preserving rough block structure.
+pub fn strip_html(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut chars = html.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '<' => {
+                in_tag = true;
+                let tag_start: String = chars.clone().take(10).collect::<String>().to_lowercase();
+                if tag_start.starts_with("p")
+                    || tag_start.starts_with("/p")
+                    || tag_start.starts_with("br")
+                    || tag_start.starts_with("h1")
+                    || tag_start.starts_with("h2")
+                    || tag_start.starts_with("h3")
+                    || tag_start.starts_with("h4")
+                    || tag_start.starts_with("h5")
+                    || tag_start.starts_with("h6")
+                    || tag_start.starts_with("div")
+                    || tag_start.starts_with("/div")
+                {
+                    result.push('\n');
+                }
+            }
+            '>' => {
+                in_tag = false;
+            }
+            '&' if !in_tag => {
+                let entity: String = chars.clone().take(10).collect();
+                if entity.starts_with("nbsp;") {
+                    result.push(' ');
+                    for _ in 0..5 {
+                        chars.next();
+                    }
+                } else if entity.starts_with("amp;") {
+                    result.push('&');
+                    for _ in 0..4 {
+                        chars.next();
+                    }
+                } else if entity.starts_with("lt;") {
+                    result.push('<');
+                    for _ in 0..3 {
+                        chars.next();
+                    }
+                } else if entity.starts_with("gt;") {
+                    result.push('>');
+                    for _ in 0..3 {
+                        chars.next();
+                    }
+                } else if entity.starts_with("quot;") {
+                    result.push('"');
+                    for _ in 0..5 {
+                        chars.next();
+                    }
+                } else if entity.starts_with("apos;") {
+                    result.push('\'');
+                    for _ in 0..5 {
+                        chars.next();
+                    }
+                } else {
+                    result.push(ch);
+                }
+            }
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+
+    result
 }

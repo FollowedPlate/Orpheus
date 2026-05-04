@@ -22,7 +22,8 @@ pub fn parse_book_sync(path: &str) -> Result<ParsedBook, String> {
         "txt" => parsers::txt::parse(file_path),
         "pdf" => parsers::pdf::parse(file_path),
         "epub" => parsers::epub::parse(file_path),
-        "azw3" | "mobi" => parsers::azw3::parse(file_path),
+        "azw3" | "mobi" => parsers::mobi::parse(file_path),
+        "fb2" => parsers::fb2::parse(file_path),
         other => Err(format!("Unsupported file format: .{other}")),
     }
 }
