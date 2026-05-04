@@ -107,6 +107,13 @@ export interface Library {
   entries: LibraryEntry[];
 }
 
+/** Table of contents node (nested parts, chapters, subsections). */
+export interface TocEntry {
+  title: string;
+  word_index: number;
+  children: TocEntry[];
+}
+
 export interface ParsedBook {
   title: string;
   author: string | null;
@@ -115,6 +122,7 @@ export interface ParsedBook {
   chapter_indices: number[];
   paragraph_indices: number[];
   sentence_indices: number[];
+  toc: TocEntry[];
 }
 
 export interface LlmQuestion {

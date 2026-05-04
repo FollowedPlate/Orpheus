@@ -25,6 +25,7 @@ mobi = "0.8"
 fb2 = "0.4"
 quick-xml = { version = "0.30", features = ["encoding", "serialize"] }
 lopdf = "0.34"
+indexmap = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"

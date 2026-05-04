@@ -26,6 +26,15 @@ pub struct Book {
     pub metadata: Option<BookMetadata>,
 }
 
+/// One node in the book's table of contents (supports nested sections).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TocEntry {
+    pub title: String,
+    /// Index of the first word of this section in `ParsedBook.words`.
+    pub word_index: usize,
+    pub children: Vec<TocEntry>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookMetadata {
     pub genre: String,
@@ -63,6 +72,8 @@ pub struct ParsedBook {
     pub chapter_indices: Vec<usize>,
     pub paragraph_indices: Vec<usize>,
     pub sentence_indices: Vec<usize>,
+    /// Hierarchical structure (cover, parts, chapters, subsections, …).
+    pub toc: Vec<TocEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

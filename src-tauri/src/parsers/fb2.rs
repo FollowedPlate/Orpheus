@@ -1,8 +1,14 @@
-use crate::models::{BookMetadata, ParsedBook};
+use crate::models::{BookMetadata, ParsedBook, TocEntry};
 use crate::parsers::process_text;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::path::Path;
+
+struct OpenSection {
+    title: String,
+    start_word_index: Option<usize>,
+    children: Vec<TocEntry>,
+}
 
 pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     let xml = std::fs::read_to_string(path).map_err(|e| format!("Failed to read FB2 file: {e}"))?;
@@ -32,12 +38,23 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     let mut first_name = String::new();
     let mut last_name = String::new();
 
+    let mut word_count: usize = 0;
+    let mut section_stack: Vec<OpenSection> = Vec::new();
+    let mut root_toc: Vec<TocEntry> = Vec::new();
+
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
                 let tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                 if tag == "body" {
                     in_body = true;
+                }
+                if in_body && tag == "section" {
+                    section_stack.push(OpenSection {
+                        title: String::new(),
+                        start_word_index: None,
+                        children: Vec::new(),
+                    });
                 }
                 if tag == "sequence" {
                     let mut name = String::new();
@@ -88,11 +105,53 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
                             Some("p") | Some("title") | Some("subtitle") | Some("v")
                         )
                     {
-                        body_parts.push(text_value.clone());
+                        let trimmed = text_value.trim();
+                        if !trimmed.is_empty() {
+                            let words_before = word_count;
+                            for raw_word in trimmed.split_whitespace() {
+                                if !raw_word.is_empty() {
+                                    word_count += 1;
+                                }
+                            }
+                            body_parts.push(trimmed.to_string());
+
+                            if in_tag_path(&stack, &["body", "section", "title"]) {
+                                if let Some(sec) = section_stack.last_mut() {
+                                    sec.title = trimmed.to_string();
+                                }
+                            }
+
+                            for sec in section_stack.iter_mut().rev() {
+                                if sec.start_word_index.is_none() {
+                                    sec.start_word_index = Some(words_before);
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
                     } else if in_tag_path(&stack, &["description", "title-info", "author", "first-name"]) {
                         first_name = text_value.clone();
                     } else if in_tag_path(&stack, &["description", "title-info", "author", "last-name"]) {
                         last_name = text_value.clone();
+                    }
+                }
+
+                if tag == "section" && in_body {
+                    if let Some(done) = section_stack.pop() {
+                        let entry = TocEntry {
+                            title: if done.title.trim().is_empty() {
+                                "Untitled".to_string()
+                            } else {
+                                done.title
+                            },
+                            word_index: done.start_word_index.unwrap_or(0),
+                            children: done.children,
+                        };
+                        if let Some(parent) = section_stack.last_mut() {
+                            parent.children.push(entry);
+                        } else {
+                            root_toc.push(entry);
+                        }
                     }
                 }
 
@@ -134,7 +193,13 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     }
 
     let text = body_parts.join("\n\n");
-    let mut parsed = process_text(&text, &title, author);
+    let toc_override = if root_toc.is_empty() {
+        None
+    } else {
+        Some(root_toc)
+    };
+
+    let mut parsed = process_text(&text, &title, author, toc_override);
     parsed.metadata = Some(BookMetadata {
         genre: genres.join(", "),
         year_written: extract_year(&date),

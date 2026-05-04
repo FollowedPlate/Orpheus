@@ -13,6 +13,7 @@
   import ComprehensionQuiz from './lib/components/ComprehensionQuiz.svelte';
   import ReadingStats from './lib/components/ReadingStats.svelte';
   import BookDetail from './lib/components/BookDetail.svelte';
+  import TableOfContents from './lib/components/TableOfContents.svelte';
 
   onMount(async () => {
     // Load persisted data
@@ -92,6 +93,20 @@
 
         <div class="topbar-actions">
           <button
+            class="icon-action toc-toolbar-btn"
+            class:active={$readerStore.tocOpen}
+            onclick={() => readerStore.toggleToc()}
+            title="Table of contents"
+            aria-label="Toggle table of contents"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
+              <path
+                d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h10v2H4v-2z"
+              />
+            </svg>
+          </button>
+
+          <button
             class="icon-action"
             onclick={() => readerStore.setShowStats(!$readerStore.showStats)}
             title="Reading stats"
@@ -131,10 +146,13 @@
         </div>
       </div>
 
-      <main class="reader-main">
-        <RSVPDisplay />
-        <Controls />
-      </main>
+      <div class="reader-body">
+        <TableOfContents />
+        <main class="reader-main">
+          <RSVPDisplay />
+          <Controls />
+        </main>
+      </div>
     </div>
   {/if}
 
@@ -158,6 +176,14 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    overflow: hidden;
+  }
+
+  .reader-body {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -246,6 +272,7 @@
     gap: 24px;
     padding: 24px;
     overflow: hidden;
+    min-width: 0;
   }
 
   .focus-mode .reader-main {
@@ -255,5 +282,10 @@
 
   :global(.focus-mode .controls) {
     display: none;
+  }
+
+  :global(.focus-mode .toc-panel),
+  :global(.focus-mode .toc-toolbar-btn) {
+    display: none !important;
   }
 </style>

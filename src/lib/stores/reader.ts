@@ -3,7 +3,7 @@ import { settingsStore } from './settings';
 import { libraryStore } from './library';
 import { getWordDelay, getRampedWpm } from '../utils/timing';
 import { buildWordGroup } from '../utils/wordGrouping';
-import type { ParsedBook, AppView } from '../types';
+import type { ParsedBook, AppView, TocEntry } from '../types';
 
 export interface ReaderState {
   // Book data
@@ -12,6 +12,9 @@ export interface ReaderState {
   sentenceIndices: Set<number>;
   chapterIndices: Set<number>;
   totalWords: number;
+  /** Table of contents from the parser (navigate via seekTo). */
+  toc: TocEntry[];
+  tocOpen: boolean;
 
   // Playback position
   currentIndex: number;
@@ -54,6 +57,8 @@ const INITIAL_STATE: ReaderState = {
   sentenceIndices: new Set(),
   chapterIndices: new Set(),
   totalWords: 0,
+  toc: [],
+  tocOpen: false,
   currentIndex: 0,
   currentDisplay: '',
   isPlaying: false,
@@ -302,6 +307,8 @@ function createReaderStore() {
         sentenceIndices: new Set(sortedSentenceIndices),
         chapterIndices: new Set(sortedChapterIndices),
         totalWords: book.words.length,
+        toc: book.toc ?? [],
+        tocOpen: false,
         currentIndex: startIndex,
         currentDisplay: book.words[startIndex] ?? '',
         targetWpm: settings.wpm,
@@ -550,6 +557,14 @@ function createReaderStore() {
 
     setShowStats(show: boolean) {
       update((s) => ({ ...s, showStats: show }));
+    },
+
+    toggleToc() {
+      update((s) => ({ ...s, tocOpen: !s.tocOpen }));
+    },
+
+    setTocOpen(open: boolean) {
+      update((s) => ({ ...s, tocOpen: open }));
     },
 
     getSessionStats() {

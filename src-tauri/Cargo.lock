@@ -3216,6 +3216,7 @@ dependencies = [
  "chrono",
  "epub",
  "fb2",
+ "indexmap 2.14.0",
  "lopdf",
  "mobi",
  "pdf-extract",

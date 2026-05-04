@@ -9,7 +9,7 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     // Try to extract a title from the first non-empty line
     let title = extract_title(&text, path);
 
-    Ok(process_text(&text, &title, None))
+    Ok(process_text(&text, &title, None, None))
 }
 
 fn extract_title(text: &str, path: &Path) -> String {

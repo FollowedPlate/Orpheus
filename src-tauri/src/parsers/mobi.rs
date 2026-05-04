@@ -47,7 +47,7 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
         context_parts.push(isbn);
     }
 
-    let mut parsed = process_text(&text, &title, author);
+    let mut parsed = process_text(&text, &title, author, None);
     parsed.metadata = Some(BookMetadata {
         genre: String::new(),
         year_written: book.publish_date().unwrap_or_default().to_string(),

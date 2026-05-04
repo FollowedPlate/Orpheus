@@ -4,15 +4,57 @@ pub mod mobi;
 pub mod pdf;
 pub mod txt;
 
-use crate::models::ParsedBook;
+use crate::models::{ParsedBook, TocEntry};
+
+/// Count words the same way as [`process_text`] (paragraph split + `split_whitespace`).
+pub(crate) fn count_words_like_process(text: &str) -> usize {
+    let paragraphs: Vec<&str> = split_paragraphs(text);
+    let mut n = 0;
+    for paragraph in paragraphs.iter() {
+        let para_trimmed = paragraph.trim();
+        if para_trimmed.is_empty() {
+            continue;
+        }
+        for raw_word in para_trimmed.split_whitespace() {
+            if !raw_word.is_empty() {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// All `word_index` values in the tree, sorted and deduplicated, for `chapter_indices` (&gt; 0).
+fn flatten_toc_chapter_indices(toc: &[TocEntry]) -> Vec<usize> {
+    let mut v = Vec::new();
+    fn walk(entries: &[TocEntry], v: &mut Vec<usize>) {
+        for e in entries {
+            if e.word_index > 0 {
+                v.push(e.word_index);
+            }
+            walk(&e.children, v);
+        }
+    }
+    walk(toc, &mut v);
+    v.sort_unstable();
+    v.dedup();
+    v
+}
 
 /// Shared text-to-ParsedBook logic used by all parsers.
-/// Takes raw text and optional chapter boundary markers, returns a ParsedBook.
-pub fn process_text(text: &str, title: &str, author: Option<String>) -> ParsedBook {
+/// `toc_override`: when `Some`, use as the table of contents (must match this `text` / word layout).
+/// When `None`, build a flat TOC from heading heuristics and collect `chapter_indices` the same way.
+pub fn process_text(
+    text: &str,
+    title: &str,
+    author: Option<String>,
+    toc_override: Option<Vec<TocEntry>>,
+) -> ParsedBook {
     let mut words: Vec<String> = Vec::new();
     let mut paragraph_indices: Vec<usize> = Vec::new();
     let mut sentence_indices: Vec<usize> = Vec::new();
     let mut chapter_indices: Vec<usize> = Vec::new();
+    let mut toc_entries: Vec<TocEntry> = Vec::new();
 
     // Split into paragraphs by double newline or single newline for plain text
     let paragraphs: Vec<&str> = split_paragraphs(text);
@@ -27,8 +69,13 @@ pub fn process_text(text: &str, title: &str, author: Option<String>) -> ParsedBo
 
         let word_start = words.len();
 
-        // Heuristic: detect chapter headings (short lines, all caps, or starts with "Chapter")
-        if is_chapter_heading(para_trimmed) {
+        // Heuristic TOC only when the caller did not supply structure
+        if toc_override.is_none() && is_chapter_heading(para_trimmed) {
+            toc_entries.push(TocEntry {
+                title: para_trimmed.to_string(),
+                word_index: word_start,
+                children: Vec::new(),
+            });
             if word_start > 0 {
                 chapter_indices.push(word_start);
             }
@@ -68,6 +115,16 @@ pub fn process_text(text: &str, title: &str, author: Option<String>) -> ParsedBo
         sentence_indices.insert(0, 0);
     }
 
+    let toc: Vec<TocEntry> = match toc_override {
+        Some(ref t) if !t.is_empty() => t.clone(),
+        _ => toc_entries,
+    };
+
+    let chapter_indices = match toc_override {
+        Some(ref t) if !t.is_empty() => flatten_toc_chapter_indices(&toc),
+        _ => chapter_indices,
+    };
+
     ParsedBook {
         title: title.to_string(),
         author,
@@ -76,6 +133,7 @@ pub fn process_text(text: &str, title: &str, author: Option<String>) -> ParsedBo
         chapter_indices,
         paragraph_indices,
         sentence_indices,
+        toc,
     }
 }
 
@@ -101,15 +159,29 @@ fn ends_sentence(word: &str) -> bool {
 
 fn is_chapter_heading(text: &str) -> bool {
     let lower = text.to_lowercase();
-    if lower.starts_with("chapter ")
-        || lower.starts_with("part ")
-        || lower.starts_with("book ")
-        || lower.starts_with("prologue")
-        || lower.starts_with("epilogue")
-        || lower.starts_with("introduction")
-        || lower.starts_with("conclusion")
-    {
-        return true;
+    const PREFIXES: &[&str] = &[
+        "chapter ",
+        "part ",
+        "book ",
+        "section ",
+        "prologue",
+        "epilogue",
+        "introduction",
+        "conclusion",
+        "foreword",
+        "preface",
+        "contents",
+        "table of contents",
+        "acknowledgment",
+        "acknowledgement",
+        "appendix",
+        "bibliography",
+        "index",
+    ];
+    for p in PREFIXES {
+        if lower.starts_with(p) {
+            return true;
+        }
     }
 
     // Short line that's all caps (likely a heading)
