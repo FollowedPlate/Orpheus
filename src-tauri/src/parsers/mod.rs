@@ -4,7 +4,7 @@ pub mod mobi;
 pub mod pdf;
 pub mod txt;
 
-use crate::models::{ParsedBook, TocEntry};
+use crate::models::{Book, TocEntry};
 
 /// Count words the same way as [`process_text`] (paragraph split + `split_whitespace`).
 pub(crate) fn count_words_like_process(text: &str) -> usize {
@@ -41,7 +41,7 @@ fn flatten_toc_chapter_indices(toc: &[TocEntry]) -> Vec<usize> {
     v
 }
 
-/// Shared text-to-ParsedBook logic used by all parsers.
+/// Shared text-to-`Book` logic used by all parsers (parsed slice of a book: words, indices, toc).
 /// `toc_override`: when `Some`, use as the table of contents (must match this `text` / word layout).
 /// When `None`, build a flat TOC from heading heuristics and collect `chapter_indices` the same way.
 pub fn process_text(
@@ -49,7 +49,7 @@ pub fn process_text(
     title: &str,
     author: Option<String>,
     toc_override: Option<Vec<TocEntry>>,
-) -> ParsedBook {
+) -> Book {
     let mut words: Vec<String> = Vec::new();
     let mut paragraph_indices: Vec<usize> = Vec::new();
     let mut sentence_indices: Vec<usize> = Vec::new();
@@ -125,15 +125,30 @@ pub fn process_text(
         _ => chapter_indices,
     };
 
-    ParsedBook {
+    Book {
         title: title.to_string(),
+        id: None,
         author,
-        metadata: None,
-        words,
-        chapter_indices,
-        paragraph_indices,
-        sentence_indices,
-        toc,
+        file_path: None,
+        file_format: None,
+        word_count: None,
+        added_at: None,
+        last_read_at: None,
+        words: Some(words),
+        chapter_indices: Some(chapter_indices),
+        paragraph_indices: Some(paragraph_indices),
+        sentence_indices: Some(sentence_indices),
+        toc: Some(toc),
+        current_word_index: None,
+        progress: None,
+        sessions: None,
+        genre: None,
+        year_written: None,
+        summary: None,
+        themes: None,
+        setting: None,
+        key_characters: None,
+        notable_context: None,
     }
 }
 

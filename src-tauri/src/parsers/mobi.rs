@@ -1,8 +1,8 @@
-use crate::models::{BookMetadata, ParsedBook};
+use crate::models::{Book, BookMetadata};
 use crate::parsers::{process_text, strip_html};
 use std::path::Path;
 
-pub fn parse(path: &Path) -> Result<ParsedBook, String> {
+pub fn parse(path: &Path) -> Result<Book, String> {
     let bytes = std::fs::read(path)
         .map_err(|e| format!("Failed to read AZW3/MOBI file: {e}"))?;
 
@@ -48,7 +48,7 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     }
 
     let mut parsed = process_text(&text, &title, author, None);
-    parsed.metadata = Some(BookMetadata {
+    parsed.set_metadata(BookMetadata {
         genre: String::new(),
         year_written: book.publish_date().unwrap_or_default().to_string(),
         summary: book.description().unwrap_or_default().to_string(),

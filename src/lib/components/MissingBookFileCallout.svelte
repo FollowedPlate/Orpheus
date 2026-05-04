@@ -1,10 +1,10 @@
 <script lang="ts">
   import { open } from '@tauri-apps/plugin-dialog';
   import { libraryStore } from '../stores/library';
-  import type { LibraryEntry } from '../types';
+  import type { Book } from '../types';
 
   interface Props {
-    entry: LibraryEntry;
+    entry: Book;
     onDismiss: () => void;
     onAfterRelocate?: (bookId: string) => void | Promise<void>;
     /** Invoked after the book is removed from the library (e.g. navigate away from detail). */
@@ -31,8 +31,8 @@
       });
       if (!selected || typeof selected !== 'string') return;
 
-      await libraryStore.relocateBook(entry.book.id, selected);
-      await onAfterRelocate?.(entry.book.id);
+      await libraryStore.relocateBook(entry.id!, selected);
+      await onAfterRelocate?.(entry.id!);
       onDismiss();
     } catch (e) {
       relocateError = String(e);
@@ -45,7 +45,7 @@
     busy = true;
     relocateError = null;
     try {
-      await libraryStore.removeBook(entry.book.id);
+      await libraryStore.removeBook(entry.id!);
       onRemovedFromLibrary?.();
       onDismiss();
     } catch (e) {
@@ -62,7 +62,7 @@
     <div class="callout-titles">
       <h2 class="callout-title">This book’s file is not on disk</h2>
       <p class="callout-lead">
-        <span class="book-name">{entry.book.title}</span> is still in your library, but nothing exists at the saved
+        <span class="book-name">{entry.title}</span> is still in your library, but nothing exists at the saved
         path anymore. The file may have been moved, renamed, or deleted.
       </p>
     </div>
@@ -70,7 +70,7 @@
   </div>
 
   <p class="path-label">Saved path</p>
-  <code class="path-value">{entry.book.file_path}</code>
+  <code class="path-value">{entry.file_path}</code>
 
   {#if relocateError}
     <p class="sub-error">{relocateError}</p>

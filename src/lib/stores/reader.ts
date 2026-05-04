@@ -3,7 +3,7 @@ import { settingsStore } from './settings';
 import { libraryStore } from './library';
 import { getWordDelay, getRampedWpm } from '../utils/timing';
 import { buildWordGroup } from '../utils/wordGrouping';
-import type { ParsedBook, AppView, TocEntry } from '../types';
+import type { Book, AppView, TocEntry } from '../types';
 
 export interface ReaderState {
   // Book data
@@ -289,28 +289,32 @@ function createReaderStore() {
   return {
     subscribe,
 
-    loadBook(book: ParsedBook, bookId: string, startIndex = 0) {
+    loadBook(book: Book, bookId: string, startIndex = 0) {
       clearTimers();
       if (progressSaveInterval) clearInterval(progressSaveInterval);
       accumulatedPlayMs = 0;
       playbackStartTime = null;
 
       const settings = getSettings();
-      const sortedParagraphIndices = [...book.paragraph_indices].sort((a, b) => a - b);
-      const sortedSentenceIndices = [...book.sentence_indices].sort((a, b) => a - b);
-      const sortedChapterIndices = [...book.chapter_indices].sort((a, b) => a - b);
+      const words = book.words ?? [];
+      const paragraph_indices = book.paragraph_indices ?? [];
+      const sentence_indices = book.sentence_indices ?? [];
+      const chapter_indices = book.chapter_indices ?? [];
+      const sortedParagraphIndices = [...paragraph_indices].sort((a, b) => a - b);
+      const sortedSentenceIndices = [...sentence_indices].sort((a, b) => a - b);
+      const sortedChapterIndices = [...chapter_indices].sort((a, b) => a - b);
 
       update(() => ({
         ...INITIAL_STATE,
-        words: book.words,
+        words,
         paragraphIndices: new Set(sortedParagraphIndices),
         sentenceIndices: new Set(sortedSentenceIndices),
         chapterIndices: new Set(sortedChapterIndices),
-        totalWords: book.words.length,
+        totalWords: words.length,
         toc: book.toc ?? [],
         tocOpen: false,
         currentIndex: startIndex,
-        currentDisplay: book.words[startIndex] ?? '',
+        currentDisplay: words[startIndex] ?? '',
         targetWpm: settings.wpm,
         currentWpm: settings.speed_ramp_enabled ? settings.speed_ramp_start_wpm : settings.wpm,
         bookId,

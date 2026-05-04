@@ -6,16 +6,16 @@
   import { readerStore } from '../stores/reader';
   import { libraryStore } from '../stores/library';
   import { settingsStore } from '../stores/settings';
-  import type { BookMetadata, LibraryEntry, ParsedBook, Settings } from '../types';
+  import type { Book, BookMetadata, Settings } from '../types';
 
   let opening = false;
   let openError: string | null = null;
-  let missingFileEntry: LibraryEntry | null = null;
+  let missingFileEntry: Book | null = null;
   let confirmRemove: string | null = null;
 
   $: entries = $libraryStore.entries.slice().sort((a, b) => {
-    const aDate = a.book.last_read_at ?? a.book.added_at;
-    const bDate = b.book.last_read_at ?? b.book.added_at;
+    const aDate = a.last_read_at ?? a.added_at ?? '';
+    const bDate = b.last_read_at ?? b.added_at ?? '';
     return new Date(bDate).getTime() - new Date(aDate).getTime();
   });
 
@@ -26,26 +26,28 @@
     return !!settings.llm_endpoint?.trim() && !!settings.llm_model?.trim();
   }
 
-  function shouldGenerateMetadataFromParser(metadata: BookMetadata | null | undefined): boolean {
-    return !metadata || metadata.themes.length === 0 || metadata.key_characters.length === 0;
+  function shouldGenerateMetadataFromParser(parsed: Book): boolean {
+    const themes = parsed.themes ?? [];
+    const kc = parsed.key_characters ?? [];
+    return themes.length === 0 || kc.length === 0;
   }
 
-  async function generateMetadataInBackground(entry: LibraryEntry, parsed: ParsedBook) {
+  async function generateMetadataInBackground(entry: Book, parsed: Book) {
     if (!canGenerateMetadata($settingsStore)) return;
 
     try {
       const maxWords = Math.min(5000, Math.max(500, $settingsStore.metadata_context_max_words));
-      const textExcerpt = parsed.words.slice(0, maxWords).join(' ');
+      const textExcerpt = (parsed.words ?? []).slice(0, maxWords).join(' ');
       if (!textExcerpt.trim()) return;
 
       const metadata = await invoke<BookMetadata>('generate_book_metadata', {
         settings: $settingsStore,
         textExcerpt,
-        bookTitle: entry.book.title,
-        bookAuthor: entry.book.author,
+        bookTitle: entry.title,
+        bookAuthor: entry.author,
       });
 
-      await libraryStore.updateBookMetadata(entry.book.id, metadata);
+      await libraryStore.updateBookMetadata(entry.id!, metadata);
     } catch (e) {
       console.warn('Metadata generation skipped/failed:', e);
     }
@@ -72,32 +74,37 @@
       }
 
       const filePath = selected;
-      const parsed = await invoke<ParsedBook>('parse_book', { path: filePath });
+      const parsed = await invoke<Book>('parse_book', { path: filePath });
 
-      // Build library entry
+      // Build library entry (omit parsed body fields — not persisted)
       const id = crypto.randomUUID();
-      const entry: LibraryEntry = {
-        book: {
-          id,
-          title: parsed.title,
-          author: parsed.author,
-          file_path: filePath,
-          file_format: filePath.split('.').pop()?.toLowerCase() ?? 'txt',
-          word_count: parsed.words.length,
-          added_at: new Date().toISOString(),
-          last_read_at: null,
-          metadata: parsed.metadata ?? null,
-        },
+      const wc = parsed.words?.length ?? 0;
+      const entry: Book = {
+        id,
+        title: parsed.title,
+        author: parsed.author ?? null,
+        file_path: filePath,
+        file_format: filePath.split('.').pop()?.toLowerCase() ?? 'txt',
+        word_count: wc,
+        added_at: new Date().toISOString(),
+        last_read_at: null,
         current_word_index: 0,
         progress: 0,
         sessions: [],
+        genre: parsed.genre ?? null,
+        year_written: parsed.year_written ?? null,
+        summary: parsed.summary ?? null,
+        themes: parsed.themes ?? null,
+        setting: parsed.setting ?? null,
+        key_characters: parsed.key_characters ?? null,
+        notable_context: parsed.notable_context ?? null,
       };
 
       await libraryStore.addBook(entry);
       await invoke('start_session', { bookId: id });
 
       readerStore.loadBook(parsed, id, 0);
-      if (shouldGenerateMetadataFromParser(parsed.metadata)) {
+      if (shouldGenerateMetadataFromParser(parsed)) {
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
@@ -112,18 +119,18 @@
     }
   }
 
-  async function openBook(entry: LibraryEntry) {
+  async function openBook(entry: Book) {
     opening = true;
     openError = null;
     missingFileEntry = null;
     try {
-      const parsed = await invoke<ParsedBook>('parse_book', {
-        path: entry.book.file_path,
+      const parsed = await invoke<Book>('parse_book', {
+        path: entry.file_path!,
       });
 
-      await invoke('start_session', { bookId: entry.book.id });
-      readerStore.loadBook(parsed, entry.book.id, entry.current_word_index);
-      if (shouldGenerateMetadataFromParser(parsed.metadata)) {
+      await invoke('start_session', { bookId: entry.id! });
+      readerStore.loadBook(parsed, entry.id!, entry.current_word_index ?? 0);
+      if (shouldGenerateMetadataFromParser(parsed)) {
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
@@ -140,7 +147,7 @@
   async function removeBook(id: string) {
     await libraryStore.removeBook(id);
     confirmRemove = null;
-    if (missingFileEntry?.book.id === id) missingFileEntry = null;
+    if (missingFileEntry?.id === id) missingFileEntry = null;
   }
 
   function openBookDetail(id: string) {
@@ -187,7 +194,7 @@
       entry={missingFileEntry}
       onDismiss={() => (missingFileEntry = null)}
       onAfterRelocate={async (bookId) => {
-        const next = $libraryStore.entries.find((e) => e.book.id === bookId);
+        const next = $libraryStore.entries.find((e) => e.id === bookId);
         if (next) await openBook(next);
       }}
     />
@@ -209,28 +216,28 @@
     </div>
   {:else}
     <div class="book-grid">
-      {#each entries as entry (entry.book.id)}
-        <div class="book-card" role="button" tabindex="0" onclick={() => openBookDetail(entry.book.id)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openBookDetail(entry.book.id)}>
+      {#each entries as entry (entry.id)}
+        <div class="book-card" role="button" tabindex="0" onclick={() => openBookDetail(entry.id)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openBookDetail(entry.id)}>
           <!-- Book spine color based on format -->
           <div
             class="book-spine"
-            style="background: {entry.book.file_format === 'pdf'
+            style="background: {entry.file_format === 'pdf'
               ? '#e53935'
-              : entry.book.file_format === 'epub'
+              : entry.file_format === 'epub'
               ? '#1565c0'
-              : entry.book.file_format === 'azw3' || entry.book.file_format === 'mobi'
+              : entry.file_format === 'azw3' || entry.file_format === 'mobi'
               ? '#ff8f00'
               : '#4caf50'}"
           ></div>
 
           <div class="book-body">
             <div class="book-meta-top">
-              <span class="book-format">{entry.book.file_format.toUpperCase()}</span>
+              <span class="book-format">{entry.file_format.toUpperCase()}</span>
               <button
                 class="remove-btn"
                 onclick={(e) => {
                   e.stopPropagation();
-                  confirmRemove = entry.book.id;
+                  confirmRemove = entry.id;
                 }}
                 aria-label="Remove book"
                 title="Remove from library"
@@ -238,45 +245,45 @@
             </div>
 
             <div class="book-info">
-              <h3 class="book-title">{entry.book.title}</h3>
-              {#if entry.book.author}
-                <p class="book-author">{entry.book.author}</p>
+              <h3 class="book-title">{entry.title}</h3>
+              {#if entry.author}
+                <p class="book-author">{entry.author}</p>
               {/if}
-              {#if entry.book.metadata}
+              {#if entry.genre || entry.year_written}
                 <p class="book-metadata">
-                  {entry.book.metadata.genre}
-                  {#if entry.book.metadata.year_written}
-                    · {entry.book.metadata.year_written}
+                  {entry.genre ?? ''}
+                  {#if entry.year_written}
+                    · {entry.year_written}
                   {/if}
                 </p>
               {/if}
-              <p class="book-words">{entry.book.word_count.toLocaleString()} words</p>
+              <p class="book-words">{(entry.word_count ?? 0).toLocaleString()} words</p>
             </div>
 
             <!-- Progress bar -->
             <div class="progress-bar-wrap">
-              <div class="progress-bar" style="width: {Math.round(entry.progress * 100)}%"></div>
+              <div class="progress-bar" style="width: {Math.round((entry.progress ?? 0) * 100)}%"></div>
             </div>
             <div class="progress-text">
-              {Math.round(entry.progress * 100)}% complete
+              {Math.round((entry.progress ?? 0) * 100)}% complete
             </div>
 
             <div class="book-footer">
               <span class="last-read">
-                {entry.book.last_read_at ? 'Read ' + formatDate(entry.book.last_read_at) : 'Never read'}
+                {entry.last_read_at ? 'Read ' + formatDate(entry.last_read_at) : 'Never read'}
               </span>
               <button class="read-btn" onclick={(e) => { e.stopPropagation(); openBook(entry); }} disabled={opening}>
-                {entry.progress > 0 ? 'Continue' : 'Read'}
+                {(entry.progress ?? 0) > 0 ? 'Continue' : 'Read'}
               </button>
             </div>
           </div>
 
-          {#if confirmRemove === entry.book.id}
+          {#if confirmRemove === entry.id}
             <div
               class="confirm-overlay"
               role="alertdialog"
               aria-modal="true"
-              aria-labelledby="confirm-remove-title-{entry.book.id}"
+              aria-labelledby="confirm-remove-title-{entry.id}"
               tabindex="-1"
               onclick={(e) => e.stopPropagation()}
               onkeydown={(e) => {
@@ -284,7 +291,7 @@
                 if (e.key === 'Escape') confirmRemove = null;
               }}
             >
-              <p id="confirm-remove-title-{entry.book.id}">Remove from library?</p>
+              <p id="confirm-remove-title-{entry.id}">Remove from library?</p>
               <div class="confirm-actions">
                 <button
                   class="btn-cancel"
@@ -296,7 +303,7 @@
                   class="btn-confirm"
                   onclick={(e) => {
                     e.stopPropagation();
-                    removeBook(entry.book.id);
+                    removeBook(entry.id);
                   }}>Remove</button>
               </div>
             </div>

@@ -1,10 +1,10 @@
-use crate::models::{BookMetadata, ParsedBook, TocEntry};
+use crate::models::{Book, BookMetadata, TocEntry};
 use crate::parsers::{count_words_like_process, process_text, strip_html};
 use epub::doc::{EpubDoc, NavPoint};
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
-pub fn parse(path: &Path) -> Result<ParsedBook, String> {
+pub fn parse(path: &Path) -> Result<Book, String> {
     let mut doc = EpubDoc::new(path).map_err(|e| format!("Failed to open EPUB: {e}"))?;
 
     let title = doc
@@ -58,7 +58,7 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     };
 
     let mut parsed = process_text(&full_text, &title, author, toc_override);
-    parsed.metadata = Some(BookMetadata {
+    parsed.set_metadata(BookMetadata {
         genre,
         year_written,
         summary: description,

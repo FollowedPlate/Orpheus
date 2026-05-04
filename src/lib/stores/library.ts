@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import type { BookMetadata, Library, LibraryEntry } from '../types';
+import type { Book, BookMetadata, Library } from '../types';
 
 function createLibraryStore() {
   const { subscribe, set, update } = writable<Library>({ entries: [] });
@@ -17,12 +17,12 @@ function createLibraryStore() {
       }
     },
 
-    async addBook(entry: LibraryEntry) {
+    async addBook(entry: Book) {
       try {
         await invoke('add_book_to_library', { entry });
         update((lib) => {
           const filtered = lib.entries.filter(
-            (e) => e.book.file_path !== entry.book.file_path,
+            (e) => e.file_path !== entry.file_path,
           );
           return { entries: [...filtered, entry] };
         });
@@ -35,7 +35,7 @@ function createLibraryStore() {
       try {
         await invoke('remove_book', { bookId });
         update((lib) => ({
-          entries: lib.entries.filter((e) => e.book.id !== bookId),
+          entries: lib.entries.filter((e) => e.id !== bookId),
         }));
       } catch (e) {
         console.error('Failed to remove book:', e);
@@ -52,9 +52,15 @@ function createLibraryStore() {
       try {
         await invoke('update_book_metadata', { bookId, metadata });
         update((lib) => {
-          const entry = lib.entries.find((e) => e.book.id === bookId);
+          const entry = lib.entries.find((e) => e.id === bookId);
           if (entry) {
-            entry.book.metadata = metadata;
+            entry.genre = metadata.genre;
+            entry.year_written = metadata.year_written;
+            entry.summary = metadata.summary;
+            entry.themes = metadata.themes;
+            entry.setting = metadata.setting;
+            entry.key_characters = metadata.key_characters;
+            entry.notable_context = metadata.notable_context;
           }
           return { ...lib };
         });
@@ -83,13 +89,11 @@ function createLibraryStore() {
           },
         });
         update((lib) => {
-          const entry = lib.entries.find((e) => e.book.id === bookId);
+          const entry = lib.entries.find((e) => e.id === bookId);
           if (entry) {
             entry.current_word_index = currentWordIndex;
-            entry.progress =
-              entry.book.word_count > 0
-                ? currentWordIndex / entry.book.word_count
-                : 0;
+            const wc = entry.word_count ?? 0;
+            entry.progress = wc > 0 ? currentWordIndex / wc : 0;
           }
           return { ...lib };
         });

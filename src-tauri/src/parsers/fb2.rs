@@ -1,4 +1,4 @@
-use crate::models::{BookMetadata, ParsedBook, TocEntry};
+use crate::models::{Book, BookMetadata, TocEntry};
 use crate::parsers::process_text;
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -10,7 +10,7 @@ struct OpenSection {
     children: Vec<TocEntry>,
 }
 
-pub fn parse(path: &Path) -> Result<ParsedBook, String> {
+pub fn parse(path: &Path) -> Result<Book, String> {
     let xml = std::fs::read_to_string(path).map_err(|e| format!("Failed to read FB2 file: {e}"))?;
 
     let mut reader = Reader::from_str(&xml);
@@ -200,7 +200,7 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     };
 
     let mut parsed = process_text(&text, &title, author, toc_override);
-    parsed.metadata = Some(BookMetadata {
+    parsed.set_metadata(BookMetadata {
         genre: genres.join(", "),
         year_written: extract_year(&date),
         summary: annotation_parts.join("\n\n"),

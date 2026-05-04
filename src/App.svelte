@@ -88,7 +88,7 @@
         </button>
 
         <div class="topbar-title">
-          {$libraryStore.entries.find((e) => e.book.id === $readerStore.bookId)?.book.title ?? ''}
+          {$libraryStore.entries.find((e) => e.id === $readerStore.bookId)?.title ?? ''}
         </div>
 
         <div class="topbar-actions">

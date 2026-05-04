@@ -76,18 +76,6 @@ export interface BookMetadata {
   notable_context: string;
 }
 
-export interface Book {
-  id: string;
-  title: string;
-  author: string | null;
-  file_path: string;
-  file_format: string;
-  word_count: number;
-  added_at: string;
-  last_read_at: string | null;
-  metadata: BookMetadata | null;
-}
-
 export interface ReadingSession {
   started_at: string;
   ended_at: string | null;
@@ -96,15 +84,59 @@ export interface ReadingSession {
   quiz_score: number | null;
 }
 
-export interface LibraryEntry {
-  book: Book;
-  current_word_index: number;
-  progress: number;
-  sessions: ReadingSession[];
+/** Unified model: library row, parser output, and reading state (optional fields when absent). */
+export interface Book {
+  title: string;
+  id?: string | null;
+  author?: string | null;
+  file_path?: string | null;
+  file_format?: string | null;
+  word_count?: number | null;
+  added_at?: string | null;
+  last_read_at?: string | null;
+  words?: string[] | null;
+  chapter_indices?: number[] | null;
+  paragraph_indices?: number[] | null;
+  sentence_indices?: number[] | null;
+  toc?: TocEntry[] | null;
+  current_word_index?: number | null;
+  progress?: number | null;
+  sessions?: ReadingSession[] | null;
+  genre?: string | null;
+  year_written?: string | null;
+  summary?: string | null;
+  themes?: string[] | null;
+  setting?: string | null;
+  key_characters?: string[] | null;
+  notable_context?: string | null;
 }
 
 export interface Library {
-  entries: LibraryEntry[];
+  entries: Book[];
+}
+
+/** Build LLM payload from inlined metadata fields (returns null if nothing useful). */
+export function bookToLlmMetadata(book: Book): BookMetadata | null {
+  if (
+    !book.genre?.trim() &&
+    !book.year_written?.trim() &&
+    !book.summary?.trim() &&
+    !(book.themes && book.themes.length > 0) &&
+    !book.setting?.trim() &&
+    !(book.key_characters && book.key_characters.length > 0) &&
+    !book.notable_context?.trim()
+  ) {
+    return null;
+  }
+  return {
+    genre: book.genre ?? '',
+    year_written: book.year_written ?? '',
+    summary: book.summary ?? '',
+    themes: book.themes ?? [],
+    setting: book.setting ?? '',
+    key_characters: book.key_characters ?? [],
+    notable_context: book.notable_context ?? '',
+  };
 }
 
 /** Table of contents node (nested parts, chapters, subsections). */
@@ -112,17 +144,6 @@ export interface TocEntry {
   title: string;
   word_index: number;
   children: TocEntry[];
-}
-
-export interface ParsedBook {
-  title: string;
-  author: string | null;
-  metadata: BookMetadata | null;
-  words: string[];
-  chapter_indices: number[];
-  paragraph_indices: number[];
-  sentence_indices: number[];
-  toc: TocEntry[];
 }
 
 export interface LlmQuestion {

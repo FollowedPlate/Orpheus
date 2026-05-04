@@ -5,7 +5,7 @@
   // Recompute stats whenever playback index changes
   $: stats = ($readerStore.currentIndex, readerStore.getSessionStats());
   $: bookId = $readerStore.bookId;
-  $: entry = $libraryStore.entries.find((e) => e.book.id === bookId);
+  $: entry = $libraryStore.entries.find((e) => e.id === bookId);
 </script>
 
 {#if $readerStore.showStats}
@@ -40,17 +40,17 @@
 
     {#if entry}
       <div class="book-info">
-        <div class="book-title">{entry.book.title}</div>
-        {#if entry.book.author}
-          <div class="book-author">{entry.book.author}</div>
+        <div class="book-title">{entry.title}</div>
+        {#if entry.author}
+          <div class="book-author">{entry.author}</div>
         {/if}
-        <div class="book-words">{entry.book.word_count.toLocaleString()} words total</div>
+        <div class="book-words">{(entry.word_count ?? 0).toLocaleString()} words total</div>
       </div>
 
-      {#if entry.sessions.length > 1}
+      {#if (entry.sessions?.length ?? 0) > 1}
         <div class="sessions-label">Past sessions</div>
         <div class="sessions-list">
-          {#each entry.sessions.slice(0, -1).reverse() as session}
+          {#each (entry.sessions ?? []).slice(0, -1).reverse() as session}
             <div class="session-row">
               <span class="session-date"
                 >{new Date(session.started_at).toLocaleDateString()}</span

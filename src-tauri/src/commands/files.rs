@@ -1,11 +1,11 @@
-use crate::models::ParsedBook;
+use crate::models::Book;
 use crate::parsers;
 use std::path::Path;
 
 /// Returned when the path is missing or not a regular file (used by the UI for friendly handling).
 pub const LIBRARY_FILE_NOT_FOUND: &str = "LIBRARY_FILE_NOT_FOUND";
 
-pub fn parse_book_sync(path: &str) -> Result<ParsedBook, String> {
+pub fn parse_book_sync(path: &str) -> Result<Book, String> {
     let file_path = Path::new(path);
 
     if !file_path.is_file() {
@@ -29,6 +29,6 @@ pub fn parse_book_sync(path: &str) -> Result<ParsedBook, String> {
 }
 
 #[tauri::command]
-pub async fn parse_book(path: String) -> Result<ParsedBook, String> {
+pub async fn parse_book(path: String) -> Result<Book, String> {
     parse_book_sync(&path)
 }

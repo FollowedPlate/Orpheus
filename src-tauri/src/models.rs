@@ -13,24 +13,92 @@ fn default_shortcut_skip_back_word() -> String {
     "Shift+ArrowLeft".to_string()
 }
 
+/// Unified book model: library row, parser output, and reading state share one struct.
+/// Fields that are not always present use `Option` and are omitted from JSON when `None`
+/// (when using `skip_serializing_if` on the field).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Book {
-    pub id: String,
     pub title: String,
+    // Library / identity
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    pub file_path: String,
-    pub file_format: String,
-    pub word_count: usize,
-    pub added_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_read_at: Option<DateTime<Utc>>,
-    pub metadata: Option<BookMetadata>,
+    // Parsed content (typically absent in persisted library entries)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub words: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter_indices: Option<Vec<usize>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph_indices: Option<Vec<usize>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentence_indices: Option<Vec<usize>>,
+    /// Hierarchical structure (cover, parts, chapters, subsections, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toc: Option<Vec<TocEntry>>,
+    // Reading progress (library)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_word_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sessions: Option<Vec<ReadingSession>>,
+    // Metadata (inlined; also exchanged as [`BookMetadata`] for LLM JSON)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year_written: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub themes: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setting: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_characters: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notable_context: Option<String>,
+}
+
+impl Book {
+    /// Copy LLM / parser metadata fields onto this book.
+    pub fn set_metadata(&mut self, meta: BookMetadata) {
+        self.genre = Some(meta.genre);
+        self.year_written = Some(meta.year_written);
+        self.summary = Some(meta.summary);
+        self.themes = Some(meta.themes);
+        self.setting = Some(meta.setting);
+        self.key_characters = Some(meta.key_characters);
+        self.notable_context = Some(meta.notable_context);
+    }
+
+    /// Clear inlined metadata (e.g. after relocating to a new file).
+    pub fn clear_metadata(&mut self) {
+        self.genre = None;
+        self.year_written = None;
+        self.summary = None;
+        self.themes = None;
+        self.setting = None;
+        self.key_characters = None;
+        self.notable_context = None;
+    }
 }
 
 /// One node in the book's table of contents (supports nested sections).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TocEntry {
     pub title: String,
-    /// Index of the first word of this section in `ParsedBook.words`.
+    /// Index of the first word of this section in [`Book::words`].
     pub word_index: usize,
     pub children: Vec<TocEntry>,
 }
@@ -47,33 +115,12 @@ pub struct BookMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LibraryEntry {
-    pub book: Book,
-    pub current_word_index: usize,
-    pub progress: f64,
-    pub sessions: Vec<ReadingSession>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadingSession {
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
     pub words_read: usize,
     pub average_wpm: f64,
     pub quiz_score: Option<f64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParsedBook {
-    pub title: String,
-    pub author: Option<String>,
-    pub metadata: Option<BookMetadata>,
-    pub words: Vec<String>,
-    pub chapter_indices: Vec<usize>,
-    pub paragraph_indices: Vec<usize>,
-    pub sentence_indices: Vec<usize>,
-    /// Hierarchical structure (cover, parts, chapters, subsections, …).
-    pub toc: Vec<TocEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -252,7 +299,7 @@ impl Default for Settings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Library {
-    pub entries: Vec<LibraryEntry>,
+    pub entries: Vec<Book>,
 }
 
 impl Default for Library {

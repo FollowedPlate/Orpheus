@@ -1,8 +1,8 @@
-use crate::models::ParsedBook;
+use crate::models::Book;
 use crate::parsers::process_text;
 use std::path::Path;
 
-pub fn parse(path: &Path) -> Result<ParsedBook, String> {
+pub fn parse(path: &Path) -> Result<Book, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read text file: {e}"))?;
 

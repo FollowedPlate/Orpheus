@@ -6,12 +6,24 @@
   import { libraryStore } from '../stores/library';
   import { readerStore } from '../stores/reader';
   import { settingsStore } from '../stores/settings';
-  import type { BookMetadata, LibraryEntry, ParsedBook } from '../types';
+  import type { Book, BookMetadata } from '../types';
 
-  $: entry = $libraryStore.entries.find((e) => e.book.id === $readerStore.selectedBookId) ?? null;
+  $: entry = $libraryStore.entries.find((e) => e.id === $readerStore.selectedBookId) ?? null;
   let loading = false;
   let opening = false;
   let missingFileBanner = false;
+
+  function hasAnyMetadata(e: Book): boolean {
+    return !!(
+      e.genre?.trim() ||
+      e.year_written?.trim() ||
+      e.summary?.trim() ||
+      (e.themes && e.themes.length > 0) ||
+      e.setting?.trim() ||
+      (e.key_characters && e.key_characters.length > 0) ||
+      e.notable_context?.trim()
+    );
+  }
 
   function canGenerateMetadata(): boolean {
     if (!entry) return false;
@@ -21,25 +33,27 @@
     return !!$settingsStore.llm_endpoint?.trim() && !!$settingsStore.llm_model?.trim();
   }
 
-  function shouldGenerateMetadataFromParser(metadata: BookMetadata | null | undefined): boolean {
-    return !metadata || metadata.themes.length === 0 || metadata.key_characters.length === 0;
+  function shouldGenerateMetadataFromParser(parsed: Book): boolean {
+    const themes = parsed.themes ?? [];
+    const kc = parsed.key_characters ?? [];
+    return themes.length === 0 || kc.length === 0;
   }
 
-  async function generateMetadataInBackground(targetEntry: LibraryEntry, parsed: ParsedBook) {
+  async function generateMetadataInBackground(targetEntry: Book, parsed: Book) {
     if (!canGenerateMetadata()) return;
     try {
       const maxWords = Math.min(5000, Math.max(500, $settingsStore.metadata_context_max_words));
-      const textExcerpt = parsed.words.slice(0, maxWords).join(' ');
+      const textExcerpt = (parsed.words ?? []).slice(0, maxWords).join(' ');
       if (!textExcerpt.trim()) return;
 
       const metadata = await invoke<BookMetadata>('generate_book_metadata', {
         settings: $settingsStore,
         textExcerpt,
-        bookTitle: targetEntry.book.title,
-        bookAuthor: targetEntry.book.author,
+        bookTitle: targetEntry.title,
+        bookAuthor: targetEntry.author,
       });
 
-      await libraryStore.updateBookMetadata(targetEntry.book.id, metadata);
+      await libraryStore.updateBookMetadata(targetEntry.id!, metadata);
     } catch (e) {
       console.warn('Metadata generation skipped/failed:', e);
     }
@@ -50,10 +64,10 @@
     opening = true;
     missingFileBanner = false;
     try {
-      const parsed = await invoke<ParsedBook>('parse_book', { path: entry.book.file_path });
-      await invoke('start_session', { bookId: entry.book.id });
-      readerStore.loadBook(parsed, entry.book.id, entry.current_word_index);
-      if (shouldGenerateMetadataFromParser(parsed.metadata)) {
+      const parsed = await invoke<Book>('parse_book', { path: entry.file_path! });
+      await invoke('start_session', { bookId: entry.id });
+      readerStore.loadBook(parsed, entry.id!, entry.current_word_index ?? 0);
+      if (shouldGenerateMetadataFromParser(parsed)) {
         void generateMetadataInBackground(entry, parsed);
       }
     } catch (e) {
@@ -72,7 +86,7 @@
     loading = true;
     missingFileBanner = false;
     try {
-      const parsed = await invoke<ParsedBook>('parse_book', { path: entry.book.file_path });
+      const parsed = await invoke<Book>('parse_book', { path: entry.file_path! });
       await generateMetadataInBackground(entry, parsed);
     } catch (e) {
       if (isMissingBookFileError(e)) {
@@ -96,7 +110,7 @@
     <header class="detail-header">
       <button class="btn-secondary" onclick={() => readerStore.navigateTo('library')}>Back to Library</button>
       <button class="btn-primary" onclick={startReading} disabled={opening}>
-        {opening ? 'Opening…' : entry.progress > 0 ? 'Continue Reading' : 'Start Reading'}
+        {opening ? 'Opening…' : (entry.progress ?? 0) > 0 ? 'Continue Reading' : 'Start Reading'}
       </button>
     </header>
 
@@ -115,37 +129,37 @@
     {/if}
 
     <section class="book-overview">
-      <h1>{entry.book.title}</h1>
-      {#if entry.book.author}
-        <p class="author">{entry.book.author}</p>
+      <h1>{entry.title}</h1>
+      {#if entry.author}
+        <p class="author">{entry.author}</p>
       {/if}
       <p class="stats">
-        {entry.book.file_format.toUpperCase()} · {entry.book.word_count.toLocaleString()} words · {Math.round(entry.progress * 100)}% complete
+        {(entry.file_format ?? '').toUpperCase()} · {(entry.word_count ?? 0).toLocaleString()} words · {Math.round((entry.progress ?? 0) * 100)}% complete
       </p>
     </section>
 
-    {#if entry.book.metadata}
+    {#if hasAnyMetadata(entry)}
       <section class="metadata-grid">
         <article>
           <h3>Genre</h3>
-          <p>{entry.book.metadata.genre}</p>
+          <p>{entry.genre ?? ''}</p>
         </article>
         <article>
           <h3>Year Written</h3>
-          <p>{entry.book.metadata.year_written}</p>
+          <p>{entry.year_written ?? ''}</p>
         </article>
         <article class="wide">
           <h3>Summary</h3>
-          <p>{entry.book.metadata.summary}</p>
+          <p>{entry.summary ?? ''}</p>
         </article>
         <article>
           <h3>Setting</h3>
-          <p>{entry.book.metadata.setting}</p>
+          <p>{entry.setting ?? ''}</p>
         </article>
         <article class="wide">
           <h3>Themes</h3>
           <div class="tags">
-            {#each entry.book.metadata.themes as theme (theme)}
+            {#each entry.themes ?? [] as theme (theme)}
               <span>{theme}</span>
             {/each}
           </div>
@@ -153,14 +167,14 @@
         <article class="wide">
           <h3>Key Characters</h3>
           <ul>
-            {#each entry.book.metadata.key_characters as character (character)}
+            {#each entry.key_characters ?? [] as character (character)}
               <li>{character}</li>
             {/each}
           </ul>
         </article>
         <article class="wide">
           <h3>Notable Context</h3>
-          <p>{entry.book.metadata.notable_context}</p>
+          <p>{entry.notable_context ?? ''}</p>
         </article>
       </section>
     {:else}

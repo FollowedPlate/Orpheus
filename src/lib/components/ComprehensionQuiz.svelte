@@ -3,7 +3,7 @@
   import { settingsStore } from '../stores/settings';
   import { libraryStore } from '../stores/library';
   import { invoke } from '@tauri-apps/api/core';
-  import type { LlmQuestion, AnswerEvaluation } from '../types';
+  import { bookToLlmMetadata, type AnswerEvaluation, type LlmQuestion } from '../types';
 
   let loading = false;
   let questions: LlmQuestion[] = [];
@@ -43,7 +43,7 @@
       const start = Math.max(0, sinceBreakStart, maxStart);
       const contextWords = rs.words.slice(start, rs.currentIndex);
       const contextText = contextWords.join(' ');
-      const currentBook = $libraryStore.entries.find((e) => e.book.id === rs.bookId)?.book ?? null;
+      const currentBook = $libraryStore.entries.find((e) => e.id === rs.bookId) ?? null;
 
       questions = await invoke<LlmQuestion[]>('generate_questions', {
         settings: $settingsStore,
@@ -51,7 +51,7 @@
         questionCount: 3,
         bookTitle: currentBook?.title ?? null,
         bookAuthor: currentBook?.author ?? null,
-        bookMetadata: currentBook?.metadata ?? null,
+        bookMetadata: currentBook ? bookToLlmMetadata(currentBook) : null,
       });
 
       currentQuestionIdx = 0;

@@ -1,10 +1,10 @@
-use crate::models::{BookMetadata, ParsedBook, TocEntry};
+use crate::models::{Book, BookMetadata, TocEntry};
 use crate::parsers::{count_words_like_process, process_text};
 use indexmap::IndexMap;
 use lopdf::{Destination, Document, Object, Outline};
 use std::path::Path;
 
-pub fn parse(path: &Path) -> Result<ParsedBook, String> {
+pub fn parse(path: &Path) -> Result<Book, String> {
     let text = pdf_extract::extract_text(path)
         .map_err(|e| format!("Failed to extract PDF text: {e}"))?;
 
@@ -19,7 +19,7 @@ pub fn parse(path: &Path) -> Result<ParsedBook, String> {
     let toc_override = outline_text_to_toc(path, &text);
 
     let mut parsed = process_text(&text, &title, author, toc_override);
-    parsed.metadata = Some(metadata);
+    parsed.set_metadata(metadata);
     Ok(parsed)
 }
 
