@@ -239,6 +239,21 @@ function createReaderStore() {
     );
   }
 
+  /** Stop timers / playback accumulation without persisting (used before skip navigation). */
+  function haltPlayback() {
+    cancelAnimation();
+    clearTimers();
+    if (progressSaveInterval) {
+      clearInterval(progressSaveInterval);
+      progressSaveInterval = null;
+    }
+    if (playbackStartTime !== null) {
+      accumulatedPlayMs += Date.now() - playbackStartTime;
+      playbackStartTime = null;
+    }
+    update((s) => ({ ...s, isPlaying: false }));
+  }
+
   function animateToIndex(
     targetIndex: number,
     showSkipContext: boolean,
@@ -357,18 +372,15 @@ function createReaderStore() {
     },
 
     pause() {
-      cancelAnimation();
-      clearTimers();
-      if (progressSaveInterval) {
-        clearInterval(progressSaveInterval);
-        progressSaveInterval = null;
-      }
-      if (playbackStartTime !== null) {
-        accumulatedPlayMs += Date.now() - playbackStartTime;
-        playbackStartTime = null;
-      }
-      update((s) => ({ ...s, isPlaying: false }));
+      haltPlayback();
       const state = getState();
+      saveProgress(state.currentIndex, false);
+    },
+
+    /** Persist current word index (e.g. when leaving the reader while paused). */
+    flushProgress() {
+      const state = getState();
+      if (!state.bookId) return;
       saveProgress(state.currentIndex, false);
     },
 
@@ -381,7 +393,12 @@ function createReaderStore() {
       }
     },
 
-    seekTo(index: number, showSkipContext = false, animate = true) {
+    seekTo(
+      index: number,
+      showSkipContext = false,
+      animate = true,
+      persistProgress = true,
+    ) {
       clearTimers();
       const state = getState();
       const settings = getSettings();
@@ -400,8 +417,16 @@ function createReaderStore() {
         }, 1500);
       };
 
+      const persistIfRequested = () => {
+        if (!persistProgress) return;
+        saveProgress(getState().currentIndex, false);
+      };
+
       if (shouldAnimate) {
-        animateToIndex(clamped, showSkipContext, finishSkipContext);
+        animateToIndex(clamped, showSkipContext, () => {
+          finishSkipContext();
+          persistIfRequested();
+        });
       } else {
         update((s) => ({
           ...s,
@@ -410,6 +435,7 @@ function createReaderStore() {
           isSkipContext: showSkipContext && settings.skip_context_enabled,
         }));
         finishSkipContext();
+        persistIfRequested();
       }
 
       if (state.isPlaying && !shouldAnimate) {
@@ -425,9 +451,8 @@ function createReaderStore() {
     },
 
     skipToSentence(direction: 'forward' | 'back') {
-      cancelAnimation();
       const wasPlaying = getState().isPlaying;
-      this.pause();
+      haltPlayback();
 
       const state = getState();
       const settings = getSettings();
@@ -446,6 +471,7 @@ function createReaderStore() {
       }
 
       const finish = () => {
+        saveProgress(getState().currentIndex, false);
         if (settings.skip_context_enabled) {
           if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
           skipContextTimeoutId = setTimeout(() => {
@@ -471,9 +497,8 @@ function createReaderStore() {
     },
 
     skipToParagraph(direction: 'forward' | 'back') {
-      cancelAnimation();
       const wasPlaying = getState().isPlaying;
-      this.pause();
+      haltPlayback();
 
       const state = getState();
       const settings = getSettings();
@@ -488,6 +513,7 @@ function createReaderStore() {
       }
 
       const finish = () => {
+        saveProgress(getState().currentIndex, false);
         if (settings.skip_context_enabled) {
           if (skipContextTimeoutId) clearTimeout(skipContextTimeoutId);
           skipContextTimeoutId = setTimeout(() => {
@@ -546,13 +572,23 @@ function createReaderStore() {
     },
 
     navigateTo(view: AppView) {
-      if (getState().isPlaying) this.pause();
-      update((s) => ({ ...s, view }));
+      const s = getState();
+      if (s.isPlaying) {
+        this.pause();
+      } else if (s.view === 'reader' && view !== 'reader') {
+        this.flushProgress();
+      }
+      update((prev) => ({ ...prev, view }));
     },
 
     openBookDetail(bookId: string) {
-      if (getState().isPlaying) this.pause();
-      update((s) => ({ ...s, view: 'book_detail', selectedBookId: bookId }));
+      const s = getState();
+      if (s.isPlaying) {
+        this.pause();
+      } else if (s.view === 'reader') {
+        this.flushProgress();
+      }
+      update((prev) => ({ ...prev, view: 'book_detail', selectedBookId: bookId }));
     },
 
     setShowSettings(show: boolean) {

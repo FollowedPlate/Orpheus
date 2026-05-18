@@ -1,9 +1,9 @@
 use super::files;
 use crate::models::{Book, BookMetadata, Library, ProgressUpdate, ReadingSession};
+use crate::paths;
 use chrono::Utc;
 use serde::Deserialize;
 use std::path::PathBuf;
-use tauri::Manager;
 
 #[derive(Debug, Deserialize)]
 struct LegacyBook {
@@ -41,13 +41,7 @@ fn library_paths_equivalent(a: &Option<String>, b: &Option<String>) -> bool {
 }
 
 fn library_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
-    std::fs::create_dir_all(&data_dir)
-        .map_err(|e| format!("Failed to create data dir: {e}"))?;
-    Ok(data_dir.join("library.json"))
+    Ok(paths::storage_dir(app)?.join("library.json"))
 }
 
 #[tauri::command]

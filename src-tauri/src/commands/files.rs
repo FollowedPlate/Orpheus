@@ -1,5 +1,6 @@
 use crate::models::Book;
 use crate::parsers;
+use crate::paths;
 use std::path::Path;
 
 /// Returned when the path is missing or not a regular file (used by the UI for friendly handling).
@@ -31,4 +32,11 @@ pub fn parse_book_sync(path: &str) -> Result<Book, String> {
 #[tauri::command]
 pub async fn parse_book(path: String) -> Result<Book, String> {
     parse_book_sync(&path)
+}
+
+#[tauri::command]
+pub async fn open_user_book_files_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = paths::user_book_files_dir(&app)?;
+    open::that(&dir).map_err(|e| format!("Failed to open book files folder: {e}"))?;
+    Ok(())
 }

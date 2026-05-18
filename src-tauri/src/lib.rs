@@ -1,6 +1,7 @@
 mod commands;
 mod models;
 mod parsers;
+mod paths;
 
 use commands::{files, library, llm, settings};
 
@@ -10,6 +11,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             files::parse_book,
+            files::open_user_book_files_dir,
             library::load_library,
             library::save_library,
             library::update_progress,

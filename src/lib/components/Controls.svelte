@@ -50,7 +50,7 @@
     scrubDeltaAccumulator = 0;
     currentDragIndex = getTrackIndex(e.clientX);
     target.setPointerCapture(e.pointerId);
-    readerStore.seekTo(currentDragIndex, true, false);
+    readerStore.seekTo(currentDragIndex, true, false, false);
   }
 
   function handleScrubPointerMove(e: PointerEvent) {
@@ -81,7 +81,7 @@
 
     if (indexDelta !== 0) {
       currentDragIndex = clampIndex(currentDragIndex + indexDelta);
-      readerStore.seekTo(currentDragIndex, true, false);
+      readerStore.seekTo(currentDragIndex, true, false, false);
     }
   }
 
@@ -91,7 +91,7 @@
     isScrubbing = false;
     scrubPointerId = null;
     target.releasePointerCapture(e.pointerId);
-    readerStore.seekTo(currentDragIndex, true, true);
+    readerStore.seekTo(currentDragIndex, true, true, true);
   }
 
   function handleWpmInput(e: Event) {

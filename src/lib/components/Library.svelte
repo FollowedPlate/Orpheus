@@ -54,6 +54,14 @@
     }
   }
 
+  async function openBookFilesFolder() {
+    try {
+      await invoke('open_user_book_files_dir');
+    } catch (e) {
+      openError = String(e);
+    }
+  }
+
   async function openFile() {
     opening = true;
     openError = null;
@@ -188,6 +196,16 @@
       <p class="app-subtitle">Speed reading, reimagined</p>
     </div>
     <div class="header-actions">
+      <button
+        class="btn-folder"
+        onclick={openBookFilesFolder}
+        aria-label="Open book files folder in file explorer"
+        title="Open book files folder"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+        </svg>
+      </button>
       <button
         class="btn-settings"
         onclick={() => readerStore.setShowSettings(true)}
@@ -382,7 +400,8 @@
     gap: 12px;
   }
 
-  .btn-settings {
+  .btn-settings,
+  .btn-folder {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -395,7 +414,8 @@
     transition: background 0.15s;
   }
 
-  .btn-settings:hover {
+  .btn-settings:hover,
+  .btn-folder:hover {
     background: var(--border);
   }
 

@@ -1,15 +1,9 @@
 use crate::models::Settings;
+use crate::paths;
 use std::path::PathBuf;
-use tauri::Manager;
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
-    std::fs::create_dir_all(&data_dir)
-        .map_err(|e| format!("Failed to create data dir: {e}"))?;
-    Ok(data_dir.join("settings.json"))
+    Ok(paths::storage_dir(app)?.join("settings.json"))
 }
 
 #[tauri::command]
